@@ -1,0 +1,73 @@
+const Client = require('../models/Client');
+const Sale = require('../models/Sale');
+
+const getClients = async (req, res) => {
+  try {
+    const clients = await Client.find({ isActive: true }).sort({ name: 1 });
+    res.json(clients);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getClient = async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+    const sales = await Sale.find({ client: client._id }).sort({ createdAt: -1 }).limit(20);
+    res.json({ client, sales });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const createClient = async (req, res) => {
+  try {
+    const client = await Client.create(req.body);
+    res.status(201).json(client);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateClient = async (req, res) => {
+  try {
+    const client = await Client.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+    res.json(client);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const deleteClient = async (req, res) => {
+  try {
+    await Client.findByIdAndUpdate(req.params.id, { isActive: false });
+    res.json({ message: 'Client désactivé avec succès' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const recordClientPayment = async (req, res) => {
+    try {
+      const { amount } = req.body;
+      const client = await Client.findById(req.params.id);
+      if (!client) return res.status(404).json({ message: 'Client introuvable' });
+  
+      if (amount > client.currentDebt) {
+        return res.status(400).json({ message: 'Le montant dépasse la dette actuelle' });
+      }
+  
+      client.currentDebt -= amount;
+      client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
+      await client.save();
+  
+      res.json({ message: 'Paiement enregistré', client });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  };
+
+module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment };
