@@ -19,10 +19,17 @@ const systemConfigRoutes = require('./routes/systemConfigRoutes');
 const app = express();
 
 app.use(helmet());
-app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use(cors({
+    origin: [
+      'https://saad-poisson.vercel.app',
+      'http://localhost:5173'
+    ],
+    credentials: true
+  }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
