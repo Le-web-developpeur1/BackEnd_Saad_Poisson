@@ -70,4 +70,24 @@ const recordClientPayment = async (req, res) => {
     }
   };
 
-module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment };
+  const getClientCredits = async (req, res) => {
+    try {
+      const client = await Client.findById(req.params.id);
+      if (!client) return res.status(404).json({ message: 'Client introuvable' });
+  
+      const sales = await Sale.find({
+        client: req.params.id,
+        paymentType: 'credit'
+      }).sort({ createdAt: -1 });
+  
+      const totalCredit    = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+      const totalPaid      = sales.reduce((sum, s) => sum + s.amountPaid, 0);
+      const totalRemaining = sales.reduce((sum, s) => sum + s.remainingAmount, 0);
+  
+      res.json({ client, sales, totalCredit, totalPaid, totalRemaining });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  };
+
+module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits };

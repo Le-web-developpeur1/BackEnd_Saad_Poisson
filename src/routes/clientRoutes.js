@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getClients, getClient, createClient,
-  updateClient, deleteClient, recordClientPayment
+  updateClient, deleteClient, recordClientPayment, getClientCredits
 } = require('../controllers/clientController');
 const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
 
@@ -18,5 +18,6 @@ router.route('/:id')
   .delete(adminOrGestionnaire, deleteClient);
 
 router.post('/:id/payment', recordClientPayment);
+router.get('/:id/credits', getClientCredits);
 
 module.exports = router;

@@ -2,6 +2,7 @@ const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 const Client = require('../models/Client');
 const StockMovement = require('../models/StockMovement');
+const Invoice = require('../models/Invoice');
 
 const getSales = async (req, res) => {
   try {
@@ -135,8 +136,36 @@ const createSale = async (req, res) => {
       await client.save();
     }
 
-    res.status(201).json(sale);
-  } catch (error) {
+    const countI = await Invoice.countDocuments();
+    const invDate = new Date();
+    const invYear = invDate.getFullYear();
+    const invMonth = String(invDate.getMonth() + 1).padStart(2, '0');
+    const invoiceNumber = `FAC-${invYear}${invMonth}-${String(countI + 1).padStart(4, '0')}`;
+
+    const createdInvoice = await Invoice.create({
+      invoiceNumber,
+      sale: sale._id,
+      client: clientId || null,
+      clientName: sale.clientName,
+      clientAddress: clientId ? (await Client.findById(clientId))?.address || '' : '',
+      items: processedItems.map(item => ({
+        designation: item.productName,
+        quantity: item.quantity,
+        unit: item.unit === 'carton' ? 'Carton' : 'Kg',
+        unitPrice: item.unitPrice,
+        total: item.total
+      })),
+      subTotal,
+      discount,
+      totalHT: totalAmount,
+      tva: 0,
+      totalTTC: totalAmount,
+      paymentConditions: paymentType === 'comptant' ? 'Paiement comptant' : 'Paiement à crédit',
+      issuedBy: req.user._id
+    });
+    
+    console.log('Invoice créée:', createdInvoice._id, createdInvoice.invoiceNumber);
+    res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };

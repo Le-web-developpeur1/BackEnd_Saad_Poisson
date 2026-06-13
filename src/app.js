@@ -13,6 +13,7 @@ const invoiceRoutes = require('./routes/invoiceRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const damageRoutes = require('./routes/damageRoutes');
 const systemConfigRoutes = require('./routes/systemConfigRoutes');
 
 const app = express();
@@ -31,6 +32,7 @@ app.use('/api/sales', saleRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/damages', damageRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/system', systemConfigRoutes);
 

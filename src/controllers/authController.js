@@ -94,4 +94,40 @@ const updatePassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, updatePassword };
+const getUsers = async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateUser = async (req, res) => {
+  try {
+    const { name, email, role } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { name, email, role },
+      { new: true }
+    ).select('-password');
+    if (!user) return res.status(404).json({ message: 'Utilisateur introuvable' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const toggleUserStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'Utilisateur introuvable' });
+    user.isActive = !user.isActive;
+    await user.save();
+    res.json({ message: `Utilisateur ${user.isActive ? 'activé' : 'désactivé'}`, user });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { register, login, getMe, updatePassword, getUsers, updateUser, toggleUserStatus };

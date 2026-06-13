@@ -267,4 +267,6 @@ const generateInvoicePDF = async (invoice, res) => {
   doc.end();
 };
 
+
+
 module.exports = generateInvoicePDF;
