@@ -1,5 +1,5 @@
 const Invoice = require('../models/Invoice');
-const generateInvoicePDF = require('../utils/generateInvoicePDF');
+const {generateInvoicePDF} = require('../utils/generateInvoicePDF');
 
 const getInvoices = async (req, res) => {
   try {
@@ -95,9 +95,15 @@ const downloadInvoicePDF = async (req, res) => {
         .populate('client')
         .populate('issuedBy', 'name');
       if (!invoice) return res.status(404).json({ message: 'Facture introuvable' });
+
+      if (res.headersSent) return;
+
       await generateInvoicePDF(invoice, res);
     } catch (error) {
-      res.status(500).json({ message: error.message });
+      console.error('Erreur download PDF:', error);
+          if (!res.headersSent) {
+            res.status(500).json({ message: error.message });
+          }    
     }
   };
 

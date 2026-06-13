@@ -45,8 +45,32 @@ const createSale = async (req, res) => {
     if (clientId && paymentType === 'credit') {
       const client = await Client.findById(clientId);
       if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+      // Calcul préalable du montant de crédit de cette vente
+      let montantVente = 0;
+      for (const item of items) {
+        const product = await Product.findById(item.product);
+        if (product) {
+          const unitPrice = item.unit === 'carton' ? product.pricePerCarton : product.pricePerKg;
+          montantVente += unitPrice * item.quantity;
+        }
+      }
+      const montantCredit  = montantVente - Number(discount || 0);
+      const amountPaidNow  = Number(amountPaid || 0);
+      const nouveauCredit  = montantCredit - amountPaidNow;
+
+      // Refuser si ça dépasse le plafond
+      if (client.creditLimit > 0 && (client.currentDebt + nouveauCredit) > client.creditLimit) {
+        return res.status(403).json({
+          message: `Vente refusée — Cette vente porterait la dette de ${client.name} à ${client.currentDebt + nouveauCredit} GNF, ce qui dépasse le plafond de ${client.creditLimit} GNF. Dette actuelle : ${client.currentDebt} GNF.`
+        });
+      }
+
+      // Bloquer si déjà bloqué
       if (client.isBlocked) {
-        return res.status(403).json({ message: `Client bloqué — plafond de crédit atteint (${client.creditLimit} GNF)` });
+        return res.status(403).json({
+          message: `Client bloqué — plafond de crédit atteint (${client.creditLimit} GNF)`
+        });
       }
     }
 
@@ -116,7 +140,7 @@ const createSale = async (req, res) => {
     const sale = await Sale.create({
       saleNumber,
       client: clientId || null,
-      clientName: clientId ? (await Client.findById(clientId)).name : 'Client comptant',
+      clientName: clientId ? (await Client.findById(clientId)).name : (req.body.clientName || 'Client comptant'),
       items: processedItems,
       subTotal,
       discount,
