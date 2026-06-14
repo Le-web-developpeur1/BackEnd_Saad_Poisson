@@ -221,7 +221,89 @@ const exportSupplierReport = async (req, res) => {
   }
 };
 
+// @desc    Rapport caisse complet
+// @route   GET /api/reports/caisse
+const getCaisseReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    let filter = {};
+
+    if (startDate && endDate) {
+      filter.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    const sales    = await Sale.find(filter).sort({ createdAt: -1 });
+    const expenses = await Expense.find(
+      startDate && endDate ? { date: { $gte: new Date(startDate), $lte: new Date(endDate) } } : {}
+    );
+
+    // Totaux globaux
+    const totalEncaisse    = sales.reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalVentes      = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const totalCredit      = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.remainingAmount, 0);
+    const totalComptant    = sales.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalDepenses    = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const soldeCaisse      = totalEncaisse - totalDepenses;
+
+    // Stats aujourd'hui
+    const today      = new Date();
+    const startToday = new Date(today.setHours(0, 0, 0, 0));
+    const endToday   = new Date(today.setHours(23, 59, 59, 999));
+
+    const salesToday    = await Sale.find({ createdAt: { $gte: startToday, $lte: endToday } });
+    const expensesToday = await Expense.find({ date: { $gte: startToday, $lte: endToday } });
+
+    const encaisseAujourdhui = salesToday.reduce((sum, s) => sum + s.amountPaid, 0);
+    const depensesAujourdhui = expensesToday.reduce((sum, e) => sum + e.amount, 0);
+
+    // Stats ce mois
+    const now        = new Date();
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    const salesMonth    = await Sale.find({ createdAt: { $gte: startMonth, $lte: endMonth } });
+    const expensesMonth = await Expense.find({ date: { $gte: startMonth, $lte: endMonth } });
+
+    const encaisseMois   = salesMonth.reduce((sum, s) => sum + s.amountPaid, 0);
+    const depensesMois   = expensesMonth.reduce((sum, e) => sum + e.amount, 0);
+    const soldeMois      = encaisseMois - depensesMois;
+
+    res.json({
+      // Totaux globaux
+      totalVentes,
+      totalEncaisse,
+      totalComptant,
+      totalCredit,
+      totalDepenses,
+      soldeCaisse,
+      nbTransactions: sales.length,
+
+      // Aujourd'hui
+      encaisseAujourdhui,
+      depensesAujourdhui,
+      soldeAujourdhui: encaisseAujourdhui - depensesAujourdhui,
+      nbTransactionsAujourdhui: salesToday.length,
+
+      // Ce mois
+      encaisseMois,
+      depensesMois,
+      soldeMois,
+      nbTransactionsMois: salesMonth.length,
+
+      // Détail ventes
+      sales,
+      expenses
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getDailyReport, getMonthlyReport, getStockReport, getDebtReport, getSupplierReport,
-  exportDailyReport, exportMonthlyReport, exportStockReport, exportDebtReport, exportSupplierReport
+  exportDailyReport, exportMonthlyReport, exportStockReport, exportDebtReport, exportSupplierReport,
+  getCaisseReport
 };
