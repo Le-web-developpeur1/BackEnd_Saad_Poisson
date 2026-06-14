@@ -166,12 +166,15 @@ const createSale = async (req, res) => {
     const invMonth = String(invDate.getMonth() + 1).padStart(2, '0');
     const invoiceNumber = `FAC-${invYear}${invMonth}-${String(countI + 1).padStart(4, '0')}`;
 
+    const clientData = clientId ? await Client.findById(clientId) : null;
+
     const createdInvoice = await Invoice.create({
       invoiceNumber,
       sale: sale._id,
       client: clientId || null,
       clientName: sale.clientName,
-      clientAddress: clientId ? (await Client.findById(clientId))?.address || '' : '',
+      clientAddress: clientData?.address || '',
+      clientPhone: clientData?.phone || '',
       items: processedItems.map(item => ({
         designation: item.productName,
         quantity: item.quantity,
@@ -189,9 +192,122 @@ const createSale = async (req, res) => {
     });
     
     console.log('Invoice créée:', createdInvoice._id, createdInvoice.invoiceNumber);
-    res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });  } catch (error) {
+    res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });  
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+// @desc    Modifier une vente
+// @route   PUT /api/sales/:id
+const updateSale = async (req, res) => {
+  try {
+    const { discount, amountPaid, paymentType, status } = req.body;
+    const sale = await Sale.findById(req.params.id);
+    if (!sale) return res.status(404).json({ message: 'Vente introuvable' });
+
+    // Mettre à jour les champs modifiables
+    if (discount !== undefined) sale.discount = discount;
+    if (amountPaid !== undefined) {
+      sale.amountPaid = amountPaid;
+      sale.remainingAmount = sale.totalAmount - amountPaid;
+      if (amountPaid >= sale.totalAmount) sale.status = 'payé';
+      else if (amountPaid > 0) sale.status = 'partiel';
+      else sale.status = 'crédit';
+    }
+    if (paymentType !== undefined) sale.paymentType = paymentType;
+    if (status !== undefined) sale.status = status;
+
+    // Mettre à jour la facture associée
+    await Invoice.findOneAndUpdate(
+      { sale: sale._id },
+      {
+        discount: sale.discount,
+        totalHT: sale.totalAmount - sale.discount,
+        totalTTC: sale.totalAmount - sale.discount,
+        paymentConditions: sale.paymentType === 'comptant' ? 'Paiement comptant' : 'Paiement à crédit'
+      }
+    );
+
+    // Mettre à jour la dette client si crédit
+    if (sale.client) {
+      const client = await Client.findById(sale.client);
+      if (client) {
+        // Recalculer la dette totale du client
+        const allSales = await Sale.find({
+          client: sale.client,
+          paymentType: 'credit'
+        });
+        client.currentDebt = allSales.reduce((sum, s) => {
+          if (s._id.toString() === sale._id.toString()) {
+            return sum + (sale.totalAmount - (amountPaid || sale.amountPaid));
+          }
+          return sum + s.remainingAmount;
+        }, 0);
+        client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
+        await client.save();
+      }
+    }
+
+    await sale.save();
+    res.json(sale);
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-module.exports = { getSales, getSale, createSale };
+// @desc    Supprimer une vente (admin only)
+// @route   DELETE /api/sales/:id
+const deleteSale = async (req, res) => {
+  try {
+    const sale = await Sale.findById(req.params.id);
+    if (!sale) return res.status(404).json({ message: 'Vente introuvable' });
+
+    // Remettre le stock
+    for (const item of sale.items) {
+      const product = await Product.findById(item.product);
+      if (product) {
+        if (item.unit === 'carton') {
+          product.stockCartons += item.quantity;
+          product.stockKg += item.quantity * product.kgPerCarton;
+        } else {
+          product.stockKg += item.quantity;
+        }
+        await product.save();
+
+        // Mouvement de stock (retour)
+        await StockMovement.create({
+          product: product._id,
+          productName: product.name,
+          type: 'entrée',
+          quantityCartons: item.unit === 'carton' ? item.quantity : 0,
+          quantityKg: item.unit === 'kg' ? item.quantity : 0,
+          reason: 'retour',
+          reference: `ANNULATION-${sale.saleNumber}`,
+          recordedBy: req.user._id
+        });
+      }
+    }
+
+    // Mettre à jour la dette client
+    if (sale.client && sale.paymentType === 'credit') {
+      const client = await Client.findById(sale.client);
+      if (client) {
+        client.currentDebt = Math.max(0, client.currentDebt - sale.remainingAmount);
+        client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
+        await client.save();
+      }
+    }
+
+    // Supprimer la facture associée
+    await Invoice.findOneAndDelete({ sale: sale._id });
+
+    // Supprimer la vente
+    await Sale.findByIdAndDelete(req.params.id);
+
+    res.json({ message: 'Vente supprimée et stock restauré' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getSales, getSale, createSale, updateSale, deleteSale };

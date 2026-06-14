@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { getSales, getSale, createSale } = require('../controllers/saleController');
-const { protect } = require('../middlewares/authMiddleware');
+const { getSales, getSale, createSale, updateSale, deleteSale } = require('../controllers/saleController');
+const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
@@ -10,6 +10,8 @@ router.route('/')
   .post(createSale);
 
 router.route('/:id')
-  .get(getSale);
+  .get(getSale)
+  .put(updateSale)
+  .delete(adminOnly, deleteSale);
 
 module.exports = router;

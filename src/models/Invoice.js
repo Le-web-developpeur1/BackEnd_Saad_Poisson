@@ -23,6 +23,7 @@ const invoiceSchema = new mongoose.Schema({
   },
   clientName: { type: String, required: true },
   clientAddress: { type: String },
+  clientPhone: { type: String, default: ''},
   items: [invoiceItemSchema],
   subTotal: { type: Number, required: true },
   discount: { type: Number, default: 0 },

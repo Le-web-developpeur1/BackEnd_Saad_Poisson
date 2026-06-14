@@ -116,28 +116,40 @@ const generateInvoicePDF = async (invoice, res) => {
     doc.fontSize(22).font('Helvetica-Bold').fillColor('#FFFFFF')
       .text('FACTURE', 370, facY + 8, { width: 193, align: 'center' });
 
-    doc.roundedRect(368, facY + 40, 197, 52, 6).lineWidth(1.2).stroke(NAVY);
-    doc.moveTo(372, facY + 62).lineTo(561, facY + 62).lineWidth(0.5).stroke('#CCCCCC');
+    doc.roundedRect(368, facY + 40, 197, 65, 6).lineWidth(1.2).stroke(NAVY);
+    doc.moveTo(372, facY + 68).lineTo(561, facY + 68).lineWidth(0.5).stroke('#CCCCCC');
 
     doc.fontSize(9).font('Helvetica').fillColor(NAVY)
-      .text(`N° :   ${invoice.invoiceNumber || '.....................'}`, 378, facY + 48);
+      .text(`N° :   ${invoice.invoiceNumber || '.....................'}`, 378, facY + 50);
 
     const d = new Date(invoice.createdAt);
     const day   = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year  = d.getFullYear();
-    doc.text(`Date :   ${day} / ${month} / ${year}`, 378, facY + 68);
+    doc.text(`Date :   ${day} / ${month} / ${year}`, 378, facY + 76);
 
     // ── BLOC FACTURÉ À ────────────────────────────────
-    doc.roundedRect(28, facY, 225, 90, 6).lineWidth(1).stroke(NAVY);
+    doc.roundedRect(28, facY, 225, 105, 6).lineWidth(1).stroke(NAVY);
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY)
-      .text('FACTURÉ À :', 42, facY + 12);
-    doc.moveTo(42, facY + 30).lineTo(238, facY + 30).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
+      .text('FACTURÉ À :', 42, facY + 10);
+
+    // Nom
+    doc.moveTo(42, facY + 26).lineTo(238, facY + 26).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
     doc.fontSize(10).font('Helvetica').fillColor('#222222').undash()
-      .text(invoice.clientName || '', 42, facY + 34);
-    doc.moveTo(42, facY + 52).lineTo(238, facY + 52).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
+      .text(invoice.clientName || '', 42, facY + 30);
+
+    // Téléphone
+    const clientPhone = invoice.clientPhone ||
+      (typeof invoice.client === 'object' ? invoice.client?.phone : '') || '';
+    doc.moveTo(42, facY + 50).lineTo(238, facY + 50).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
     doc.fontSize(9).font('Helvetica').fillColor('#555555').undash()
-      .text(invoice.clientAddress || '', 42, facY + 56, { width: 180 });
+      .text(clientPhone ? `Tél : ${clientPhone}` : '', 42, facY + 54);
+
+    // Adresse
+    doc.moveTo(42, facY + 72).lineTo(238, facY + 72).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
+    doc.fontSize(9).font('Helvetica').fillColor('#555555').undash()
+      .text(invoice.clientAddress || '', 42, facY + 76, { width: 180 });
+      
     doc.moveTo(42, facY + 74).lineTo(238, facY + 74).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
 
     // ── TABLEAU ARTICLES ──────────────────────────────
@@ -220,11 +232,11 @@ const generateInvoicePDF = async (invoice, res) => {
     drawTot('TOTAL TTC',  `${formatAmount(invoice.totalTTC || 0)} ${config.currency || 'GNF'}`, true, true);
 
     // ── LIGNE SÉPARATRICE ─────────────────────────────
-    const sepY = BLOC_Y + 100;
+    const sepY = BLOC_Y + 110;
     doc.moveTo(28, sepY).lineTo(567, sepY).lineWidth(0.5).stroke('#DDDDDD');
 
     // ── CONDITIONS DE PAIEMENT ────────────────────────
-    const condY = sepY + 14;
+    const condY = sepY + 18;
     doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY)
       .text('CONDITIONS DE PAIEMENT :', 28, condY);
     doc.moveTo(28, condY + 18).lineTo(255, condY + 18)
@@ -238,7 +250,7 @@ const generateInvoicePDF = async (invoice, res) => {
     // ── SIGNATURES ────────────────────────────────────
     const sigX = 278;
     const sigW = 289;
-    const sigY = condY + 20;
+    const sigY = condY;
 
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY)
       .text('CACHET ET SIGNATURE', sigX, sigY);
