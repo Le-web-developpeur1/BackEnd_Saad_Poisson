@@ -17,11 +17,11 @@ router.route('/')
 router.route('/:id')
   .get(getClient)
   .put(updateClient)
-  .delete(adminOrGestionnaire, deleteClient);
+  .delete(adminOnly, deleteClient);
 
 router.post('/:id/payment', recordClientPayment);
 router.get('/:id/credits', getClientCredits);
 router.get('/:id/credits/pdf', downloadCreditPDF);
-router.post('/:id/recalculate', protect, adminOnly, recalculateDebt);
+router.post('/:id/recalculate', adminOnly, recalculateDebt);
 
 module.exports = router;

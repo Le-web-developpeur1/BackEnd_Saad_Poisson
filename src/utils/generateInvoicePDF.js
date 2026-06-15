@@ -152,28 +152,26 @@ const generateInvoicePDF = async (invoice, res) => {
 
     // ── BLOC FACTURÉ À ────────────────────────────────
     doc.roundedRect(28, facY, 225, 105, 6).lineWidth(1).stroke(NAVY);
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY)
-      .text('FACTURÉ À :', 42, facY + 10);
 
-    // Nom
-    doc.moveTo(42, facY + 26).lineTo(238, facY + 26).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
-    doc.fontSize(10).font('Helvetica').fillColor('#222222').undash()
-      .text(invoice.clientName || '', 42, facY + 30);
+    // Titre + Nom sur la même ligne
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY)
+      .text('FACTURÉ À : ', 42, facY + 14, { continued: true })
+      .fillColor('#222222')
+      .text(invoice.clientName || '', { font: 'Helvetica-Bold' });
 
     // Téléphone
     const clientPhone = invoice.clientPhone ||
       (typeof invoice.client === 'object' ? invoice.client?.phone : '') || '';
-    doc.moveTo(42, facY + 50).lineTo(238, facY + 50).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
+    doc.moveTo(42, facY + 30).lineTo(238, facY + 30).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
     doc.fontSize(9).font('Helvetica').fillColor('#555555').undash()
-      .text(clientPhone ? `Tél : ${clientPhone}` : '', 42, facY + 54);
+      .text(clientPhone ? `Tél : ${clientPhone}` : '', 42, facY + 34);
 
     // Adresse
-    doc.moveTo(42, facY + 72).lineTo(238, facY + 72).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
+    doc.moveTo(42, facY + 52).lineTo(238, facY + 52).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
     doc.fontSize(9).font('Helvetica').fillColor('#555555').undash()
-      .text(invoice.clientAddress || '', 42, facY + 76, { width: 180 });
-      
-    doc.moveTo(42, facY + 74).lineTo(238, facY + 74).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
+      .text(invoice.clientAddress ? `Addresse : ${invoice.clientAddress}` : '' || '', 42, facY + 56, { width: 180 });
 
+    doc.moveTo(42, facY + 74).lineTo(238, facY + 74).lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
     // ── TABLEAU ARTICLES ──────────────────────────────
     const tY = 292;
     const cols = {

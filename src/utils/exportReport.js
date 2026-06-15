@@ -1,81 +1,185 @@
 const PDFDocument = require('pdfkit');
-const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, AlignmentType } = require('docx');
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType } = require('docx');
 const { createObjectCsvWriter } = require('csv-writer');
 const path = require('path');
-const fs = require('fs');
+const fs   = require('fs');
 
 const NAVY = '#1A2B5F';
+const GOLD = '#D4A017';
 
-const formatAmount = (amount) => {
-    return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+// ── EN-TÊTE PDF AVEC LOGO ─────────────────────────
+const drawHeader = async (doc, config, title) => {
+  const W = 595;
+
+  // Fond bleu marine
+  doc.rect(0, 0, W, 100).fill(NAVY);
+
+  // Logo à gauche
+  if (config?.logo) {
+    try {
+      if (config.logo.startsWith('data:')) {
+        const base64Data = config.logo.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        doc.image(buffer, 20, 10, { width: 75, height: 75 });
+      } else if (config.logo.startsWith('http')) {
+        const https = require('https');
+        await new Promise((resolve) => {
+          https.get(config.logo, (response) => {
+            const chunks = [];
+            response.on('data', chunk => chunks.push(chunk));
+            response.on('end', () => {
+              try {
+                const buffer = Buffer.concat(chunks);
+                doc.image(buffer, 20, 10, { width: 75, height: 75 });
+              } catch (e) {}
+              resolve(null);
+            });
+          }).on('error', resolve);
+        });
+      } else {
+        const logoPath = path.join(__dirname, '../../', config.logo.replace('src/', ''));
+        if (fs.existsSync(logoPath)) {
+          doc.image(logoPath, 20, 10, { width: 75, height: 75 });
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Infos établissement à droite
+  doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF')
+    .text(config?.establishmentName || 'S.A.D POISSON', 110, 18);
+  doc.fontSize(9).font('Helvetica').fillColor(GOLD)
+    .text(config?.establishmentSubtitle || 'ENTREPRISE SAADE', 110, 40);
+  doc.fontSize(8).fillColor('#CCCCCC')
+    .text(config?.description || '', 110, 55);
+  doc.fontSize(8).fillColor('#CCCCCC')
+    .text(`${config?.address || ''} | Tél: ${config?.phone1 || ''}  -  ${config?.phone2 || ''}`, 110, 68);
+  doc.fontSize(8).fillColor('#CCCCCC')
+    .text(`Email: ${config?.email || ''}`, 110, 80);
+
+  // Titre du rapport
+  doc.rect(0, 100, W, 42).fill('#F1F5F9');
+  doc.fontSize(16).font('Helvetica-Bold').fillColor(NAVY)
+    .text(title, 20, 112);
+  doc.fontSize(8).font('Helvetica').fillColor('#666666')
+    .text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 20, 130);
+
+  // Ligne séparatrice dorée
+  doc.moveTo(20, 142).lineTo(W - 20, 142).lineWidth(1.5).stroke(GOLD);
 };
 
-// ── PDF ───────────────────────────────────────────────
-const exportPDF = (title, headers, rows, res, filename) => {
-  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+// ── TABLEAU PDF ───────────────────────────────────
+const drawTable = (doc, headers, rows, startY) => {
+  const W        = 595;
+  const margin   = 20;
+  const tableW   = W - margin * 2;
+  const colWidth = tableW / headers.length;
+  let   y        = startY;
+
+  // Header tableau
+  doc.rect(margin, y, tableW, 24).fill(NAVY);
+  headers.forEach((h, i) => {
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
+      .text(h, margin + i * colWidth + 5, y + 8, { width: colWidth - 10 });
+  });
+  y += 24;
+
+  // Lignes
+  rows.forEach((row, idx) => {
+    if (y > 760) {
+      doc.addPage();
+      y = 40;
+      // Répéter le header
+      doc.rect(margin, y, tableW, 24).fill(NAVY);
+      headers.forEach((h, i) => {
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
+          .text(h, margin + i * colWidth + 5, y + 8, { width: colWidth - 10 });
+      });
+      y += 24;
+    }
+
+    const bg = idx % 2 === 0 ? '#FFFFFF' : '#EBF5FB';
+    doc.rect(margin, y, tableW, 20).fill(bg);
+    row.forEach((cell, i) => {
+      doc.fontSize(7.5).font('Helvetica').fillColor('#222222')
+        .text(String(cell ?? '—'), margin + i * colWidth + 5, y + 6, { width: colWidth - 10 });
+    });
+    y += 20;
+  });
+
+  // Bordure tableau
+  doc.rect(margin, startY, tableW, y - startY).lineWidth(0.8).stroke(NAVY);
+
+  return y;
+};
+
+// ── TOTAUX EN BAS ─────────────────────────────────
+const drawTotals = (doc, totals, y) => {
+  const W      = 595;
+  const margin = 20;
+
+  y += 15;
+  doc.moveTo(margin, y).lineTo(W - margin, y).lineWidth(0.5).stroke('#CCCCCC');
+  y += 10;
+
+  doc.fontSize(10).font('Helvetica-Bold').fillColor(NAVY)
+    .text('TOTAUX GÉNÉRAUX', margin, y);
+  y += 18;
+
+  const totW = 250;
+  const totX = W - margin - totW;
+
+  totals.forEach(({ label, value, highlight }) => {
+    doc.rect(totX, y, totW, 22)
+      .fill(highlight ? NAVY : '#F8FAFC');
+    doc.fontSize(9)
+      .font(highlight ? 'Helvetica-Bold' : 'Helvetica')
+      .fillColor(highlight ? GOLD : '#333333')
+      .text(label, totX + 8, y + 7)
+      .text(value, totX + 8, y + 7, { align: 'right', width: totW - 16 });
+    doc.rect(totX, y, totW, 22).lineWidth(0.5).stroke('#CCCCCC');
+    y += 22;
+  });
+
+  return y;
+};
+
+// ── PIED DE PAGE ──────────────────────────────────
+const drawFooter = (doc, config) => {
+  const W       = 595;
+  const PAGE_H  = 842;
+  doc.rect(0, PAGE_H - 35, W, 35).fill(NAVY);
+  doc.fontSize(9).font('Helvetica-BoldOblique').fillColor(GOLD)
+    .text(config?.invoiceFooter || 'Merci pour votre confiance !', 0, PAGE_H - 22, { align: 'center', width: W });
+};
+
+// ══════════════════════════════════════════════════
+// EXPORT PDF
+// ══════════════════════════════════════════════════
+const exportPDF = async (title, headers, rows, res, filename, totals = [], config = null) => {
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=${filename}.pdf`);
   doc.pipe(res);
 
-  // En-tête
-  doc.rect(0, 0, 595, 70).fill(NAVY);
-  doc.fontSize(20).font('Helvetica-Bold').fillColor('#FFFFFF')
-    .text('S.A.D POISSON', 50, 15);
-  doc.fontSize(10).fillColor('#CCCCCC')
-    .text('Commerce et Distribution de Poissons Congelés en Gros', 50, 42);
+  await drawHeader(doc, config, title);
 
-  // Titre rapport
-  doc.fontSize(16).font('Helvetica-Bold').fillColor(NAVY)
-    .text(title, 50, 90);
-  doc.fontSize(9).font('Helvetica').fillColor('#666666')
-    .text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 50, 112);
+  const endY = drawTable(doc, headers, rows, 155);
 
-  doc.moveTo(50, 128).lineTo(545, 128).stroke(NAVY);
+  if (totals.length > 0) {
+    drawTotals(doc, totals, endY);
+  }
 
-  // Tableau header
-  let y = 140;
-  const colWidth = 495 / headers.length;
-
-  doc.rect(50, y, 495, 22).fill(NAVY);
-  headers.forEach((h, i) => {
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
-      .text(h, 50 + i * colWidth + 4, y + 7, { width: colWidth - 8 });
-  });
-  y += 22;
-
-  // Lignes
-  rows.forEach((row, idx) => {
-    const bg = idx % 2 === 0 ? '#EBF5FB' : '#FFFFFF';
-    doc.rect(50, y, 495, 20).fill(bg);
-    row.forEach((cell, i) => {
-      doc.fontSize(8).font('Helvetica').fillColor('#222222')
-        .text(String(cell ?? '—'), 50 + i * colWidth + 4, y + 6, { width: colWidth - 8 });
-    });
-    y += 20;
-
-    // Nouvelle page si nécessaire
-    if (y > 750) {
-      doc.addPage();
-      y = 50;
-    }
-  });
-
-  // Bordure tableau
-  doc.rect(50, 140, 495, y - 140).stroke(NAVY);
-
-  // Pied de page
-  doc.rect(0, 800, 595, 42).fill(NAVY);
-  doc.fontSize(9).font('Helvetica').fillColor('#CCCCCC')
-    .text('Merci pour votre confiance !', 0, 815, { align: 'center', width: 595 });
-
+  drawFooter(doc, config);
   doc.end();
 };
 
-// ── WORD ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// EXPORT WORD
+// ══════════════════════════════════════════════════
 const exportWord = async (title, headers, rows, res, filename) => {
-  const bd = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
+  const bd      = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
   const borders = { top: bd, bottom: bd, left: bd, right: bd };
-
   const colWidth = Math.floor(9360 / headers.length);
 
   const tableRows = [
@@ -139,7 +243,9 @@ const exportWord = async (title, headers, rows, res, filename) => {
   res.send(buffer);
 };
 
-// ── CSV ───────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// EXPORT CSV
+// ══════════════════════════════════════════════════
 const exportCSV = async (headers, rows, res, filename) => {
   const tmpPath = path.join(__dirname, `../../tmp_${filename}.csv`);
 
@@ -159,9 +265,9 @@ const exportCSV = async (headers, rows, res, filename) => {
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
-  res.write('\uFEFF'); // BOM pour Excel
+  res.write('\uFEFF');
   fs.createReadStream(tmpPath)
-    .on('end', () => fs.unlinkSync(tmpPath))
+    .on('end', () => { try { fs.unlinkSync(tmpPath); } catch (e) {} })
     .pipe(res);
 };
 

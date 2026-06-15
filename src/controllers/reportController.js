@@ -4,7 +4,15 @@ const Product = require('../models/Product');
 const Client = require('../models/Client');
 const Supplier = require('../models/Supplier');
 const StockMovement = require('../models/StockMovement');
+const SystemConfig = require('../models/SystemConfig');
+
 const { exportPDF, exportWord, exportCSV } = require('../utils/exportReport');
+
+const formatAmount = (amount) => {
+  if (amount === undefined || amount === null || isNaN(amount)) return '0';
+  return Number(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
 
 const getDailyReport = async (req, res) => {
   try {
@@ -94,131 +102,189 @@ const getSupplierReport = async (req, res) => {
 
 // ── EXPORTS ───────────────────────────────────────────
 
+
 const exportDailyReport = async (req, res) => {
   try {
     const { format, date } = req.query;
     const targetDate = date ? new Date(date) : new Date();
     const start = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
-    const end = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
+    const end   = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
 
-    const sales = await Sale.find({ createdAt: { $gte: start, $lte: end } });
+    const sales    = await Sale.find({ createdAt: { $gte: start, $lte: end } });
     const expenses = await Expense.find({ date: { $gte: start, $lte: end } });
+    const config   = await SystemConfig.findOne();
 
-    const title = `Rapport Journalier — ${start.toLocaleDateString('fr-FR')}`;
+    const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const benefice      = totalEncaisse - totalDepenses;
+
+    const title   = `Rapport Journalier — ${start.toLocaleDateString('fr-FR')}`;
     const headers = ['N° Vente', 'Client', 'Montant', 'Type', 'Statut', 'Date'];
-    const rows = sales.map(s => [
-      s.saleNumber, s.clientName,
-      `${s.totalAmount.toLocaleString('fr-FR')} GNF`,
-      s.paymentType, s.status,
+    const rows    = sales.map(s => [
+      s.saleNumber,
+      s.clientName,
+      `${formatAmount(s.totalAmount)} GNF`,
+      s.paymentType,
+      s.status,
       new Date(s.createdAt).toLocaleDateString('fr-FR')
     ]);
 
-    if (format === 'pdf') return exportPDF(title, headers, rows, res, `rapport-journalier-${start.toISOString().split('T')[0]}`);
-    if (format === 'word') return await exportWord(title, headers, rows, res, `rapport-journalier-${start.toISOString().split('T')[0]}`);
-    if (format === 'csv') return await exportCSV(headers, rows, res, `rapport-journalier-${start.toISOString().split('T')[0]}`);
+    const totals = [
+      { label: 'Total ventes',   value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
+      { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
+      { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
+      { label: 'Bénéfice net',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
+    ];
+
+    const fname = `rapport-journalier-${start.toISOString().split('T')[0]}`;
+    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, fname, totals, config);
+    if (format === 'word') return await exportWord(title, headers, rows, res, fname);
+    if (format === 'csv')  return await exportCSV(headers, rows, res, fname);
 
     res.status(400).json({ message: 'Format invalide. Utilisez pdf, word ou csv' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 const exportMonthlyReport = async (req, res) => {
   try {
     const { format, month, year } = req.query;
-    const m = month ? parseInt(month) - 1 : new Date().getMonth();
-    const y = year ? parseInt(year) : new Date().getFullYear();
-    const start = new Date(y, m, 1);
-    const end = new Date(y, m + 1, 0, 23, 59, 59);
+    const m      = month ? parseInt(month) - 1 : new Date().getMonth();
+    const y      = year  ? parseInt(year)       : new Date().getFullYear();
+    const start  = new Date(y, m, 1);
+    const end    = new Date(y, m + 1, 0, 23, 59, 59);
+    const config = await SystemConfig.findOne();
 
-    const sales = await Sale.find({ createdAt: { $gte: start, $lte: end } });
-    const title = `Rapport Mensuel — ${m + 1}/${y}`;
+    const sales    = await Sale.find({ createdAt: { $gte: start, $lte: end } });
+    const expenses = await Expense.find({ date: { $gte: start, $lte: end } });
+
+    const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const benefice      = totalEncaisse - totalDepenses;
+
+    const title   = `Rapport Mensuel — ${m + 1}/${y}`;
     const headers = ['N° Vente', 'Client', 'Montant', 'Type', 'Statut', 'Date'];
-    const rows = sales.map(s => [
-      s.saleNumber, s.clientName,
-      `${s.totalAmount.toLocaleString('fr-FR')} GNF`,
-      s.paymentType, s.status,
+    const rows    = sales.map(s => [
+      s.saleNumber,
+      s.clientName,
+      `${formatAmount(s.totalAmount)} GNF`,
+      s.paymentType,
+      s.status,
       new Date(s.createdAt).toLocaleDateString('fr-FR')
     ]);
 
-    if (format === 'pdf') return exportPDF(title, headers, rows, res, `rapport-mensuel-${m + 1}-${y}`);
-    if (format === 'word') return await exportWord(title, headers, rows, res, `rapport-mensuel-${m + 1}-${y}`);
-    if (format === 'csv') return await exportCSV(headers, rows, res, `rapport-mensuel-${m + 1}-${y}`);
+    const totals = [
+      { label: 'Total ventes',   value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
+      { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
+      { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
+      { label: 'Bénéfice net',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
+    ];
+
+    const fname = `rapport-mensuel-${m + 1}-${y}`;
+    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, fname, totals, config);
+    if (format === 'word') return await exportWord(title, headers, rows, res, fname);
+    if (format === 'csv')  return await exportCSV(headers, rows, res, fname);
 
     res.status(400).json({ message: 'Format invalide. Utilisez pdf, word ou csv' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 const exportStockReport = async (req, res) => {
   try {
     const { format } = req.query;
-    const products = await Product.find({ isActive: true });
-    const title = 'Rapport des Stocks';
-    const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Stock Kg', 'Prix/Carton', 'Prix/Kg', 'Alerte'];
-    const rows = products.map(p => [
-      p.name, p.category,
-      p.stockCartons, p.stockKg,
-      `${p.pricePerCarton.toLocaleString('fr-FR')} GNF`,
-      `${p.pricePerKg.toLocaleString('fr-FR')} GNF`,
-      p.stockCartons <= p.alertThreshold ? '⚠️ Stock bas' : '✅ OK'
+    const products   = await Product.find({ isActive: true });
+    const config     = await SystemConfig.findOne();
+
+    const title   = 'Rapport des Stocks';
+    const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Stock Kg', 'Prix/Carton', 'Prix/Kg', 'Statut'];
+    const rows    = products.map(p => [
+      p.name,
+      p.category || '—',
+      p.stockCartons,
+      `${p.stockKg} kg`,
+      `${formatAmount(p.pricePerCarton)} GNF`,
+      `${formatAmount(p.pricePerKg)} GNF`,
+      p.stockCartons <= p.alertThreshold ? 'Stock bas' : 'OK'
     ]);
 
-    if (format === 'pdf') return exportPDF(title, headers, rows, res, 'rapport-stocks');
+    const totalCartons = products.reduce((sum, p) => sum + p.stockCartons, 0);
+    const totalKg      = products.reduce((sum, p) => sum + p.stockKg, 0);
+    const totals = [
+      { label: 'Total produits',       value: String(products.length), highlight: false },
+      { label: 'Total cartons en stock', value: String(totalCartons),  highlight: false },
+      { label: 'Total kg en stock',    value: `${totalKg} kg`,         highlight: true  },
+    ];
+
+    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-stocks', totals, config);
     if (format === 'word') return await exportWord(title, headers, rows, res, 'rapport-stocks');
-    if (format === 'csv') return await exportCSV(headers, rows, res, 'rapport-stocks');
+    if (format === 'csv')  return await exportCSV(headers, rows, res, 'rapport-stocks');
 
     res.status(400).json({ message: 'Format invalide. Utilisez pdf, word ou csv' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 const exportDebtReport = async (req, res) => {
   try {
     const { format } = req.query;
-    const clients = await Client.find({ isActive: true, currentDebt: { $gt: 0 } }).sort({ currentDebt: -1 });
-    const title = 'Rapport des Dettes Clients';
-    const headers = ['Client', 'Téléphone', 'Plafond', 'Dette Actuelle', 'Statut'];
-    const rows = clients.map(c => [
-      c.name, c.phone || '—',
-      `${c.creditLimit.toLocaleString('fr-FR')} GNF`,
-      `${c.currentDebt.toLocaleString('fr-FR')} GNF`,
-      c.isBlocked ? '🔴 Bloqué' : '🟢 Actif'
+    const clients    = await Client.find({ isActive: true, currentDebt: { $gt: 0 } }).sort({ currentDebt: -1 });
+    const config     = await SystemConfig.findOne();
+
+    const title   = 'Rapport des Dettes Clients';
+    const headers = ['Client', 'Téléphone', 'Plafond', 'Dette actuelle', 'Statut'];
+    const rows    = clients.map(c => [
+      c.name,
+      c.phone || '—',
+      `${formatAmount(c.creditLimit)} GNF`,
+      `${formatAmount(c.currentDebt)} GNF`,
+      c.isBlocked ? 'Bloqué' : 'Actif'
     ]);
 
-    if (format === 'pdf') return exportPDF(title, headers, rows, res, 'rapport-dettes');
+    const totalDette = clients.reduce((sum, c) => sum + c.currentDebt, 0);
+    const totals = [
+      { label: 'Nombre de clients débiteurs', value: String(clients.length), highlight: false },
+      { label: 'Total dettes',                value: `${formatAmount(totalDette)} GNF`, highlight: true },
+    ];
+
+    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-dettes', totals, config);
     if (format === 'word') return await exportWord(title, headers, rows, res, 'rapport-dettes');
-    if (format === 'csv') return await exportCSV(headers, rows, res, 'rapport-dettes');
+    if (format === 'csv')  return await exportCSV(headers, rows, res, 'rapport-dettes');
 
     res.status(400).json({ message: 'Format invalide. Utilisez pdf, word ou csv' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 const exportSupplierReport = async (req, res) => {
   try {
     const { format } = req.query;
-    const suppliers = await Supplier.find({ isActive: true });
-    const title = 'Rapport des Fournisseurs';
-    const headers = ['Fournisseur', 'Téléphone', 'Total Achats', 'Total Payé', 'Solde Restant'];
-    const rows = suppliers.map(s => [
-      s.name, s.phone || '—',
-      `${s.totalPurchases.toLocaleString('fr-FR')} GNF`,
-      `${s.totalPaid.toLocaleString('fr-FR')} GNF`,
-      `${s.balance.toLocaleString('fr-FR')} GNF`
+    const suppliers  = await Supplier.find({ isActive: true });
+    const config     = await SystemConfig.findOne();
+
+    const title   = 'Rapport des Fournisseurs';
+    const headers = ['Fournisseur', 'Téléphone', 'Total achats', 'Total payé', 'Solde restant'];
+    const rows    = suppliers.map(s => [
+      s.name,
+      s.phone || '—',
+      `${formatAmount(s.totalPurchases)} GNF`,
+      `${formatAmount(s.totalPaid)} GNF`,
+      `${formatAmount(s.balance)} GNF`
     ]);
 
-    if (format === 'pdf') return exportPDF(title, headers, rows, res, 'rapport-fournisseurs');
+    const totalAchats  = suppliers.reduce((sum, s) => sum + s.totalPurchases, 0);
+    const totalPaye    = suppliers.reduce((sum, s) => sum + s.totalPaid, 0);
+    const totalRestant = suppliers.reduce((sum, s) => sum + s.balance, 0);
+    const totals = [
+      { label: 'Total achats',    value: `${formatAmount(totalAchats)} GNF`,   highlight: false },
+      { label: 'Total payé',      value: `${formatAmount(totalPaye)} GNF`,     highlight: false },
+      { label: 'Total à payer',   value: `${formatAmount(totalRestant)} GNF`,  highlight: true  },
+    ];
+
+    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-fournisseurs', totals, config);
     if (format === 'word') return await exportWord(title, headers, rows, res, 'rapport-fournisseurs');
-    if (format === 'csv') return await exportCSV(headers, rows, res, 'rapport-fournisseurs');
+    if (format === 'csv')  return await exportCSV(headers, rows, res, 'rapport-fournisseurs');
 
     res.status(400).json({ message: 'Format invalide. Utilisez pdf, word ou csv' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 // @desc    Rapport caisse complet
