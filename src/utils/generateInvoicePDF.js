@@ -58,9 +58,31 @@ const generateInvoicePDF = async (invoice, res) => {
 
     if (config.logo) {
       try {
-        const logoPath = path.join(__dirname, '../../', config.logo);
-        if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 28, 12, { width: 108, height: 108 });
+        // Si c'est du base64
+        if (config.logo.startsWith('data:')) {
+          const base64Data = config.logo.split(',')[1];
+          const buffer = Buffer.from(base64Data, 'base64');
+          doc.image(buffer, 28, 12, { width: 108, height: 108 });
+        } else if (config.logo.startsWith('http')) {
+          // URL externe (Cloudinary ou autre)
+          const https = require('https');
+          await new Promise((resolve) => {
+            https.get(config.logo, (response) => {
+              const chunks = [];
+              response.on('data', chunk => chunks.push(chunk));
+              response.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                try { doc.image(buffer, 28, 12, { width: 108, height: 108 }); } catch (e) {}
+                resolve(null);
+              });
+            }).on('error', resolve);
+          });
+        } else {
+          // Fichier local
+          const logoPath = path.join(__dirname, '../../', config.logo.replace('src/', ''));
+          if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 28, 12, { width: 108, height: 108 });
+          }
         }
       } catch (e) {
         console.log('Logo non chargé:', e.message);

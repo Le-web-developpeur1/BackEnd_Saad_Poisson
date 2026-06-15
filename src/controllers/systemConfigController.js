@@ -55,13 +55,9 @@ const uploadLogo = async (req, res) => {
     let config = await SystemConfig.findOne();
     if (!config) config = await SystemConfig.create({});
 
-    // Supprimer l'ancien logo si existant
-    if (config.logo) {
-      const oldPath = path.join(__dirname, '../../', config.logo);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-
-    config.logo = `src/uploads/logos/${req.file.filename}`;
+    // Convertir en base64 et stocker dans MongoDB
+    const base64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    config.logo = base64;
     config.updatedBy = req.user._id;
     await config.save();
 

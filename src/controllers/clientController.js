@@ -112,4 +112,27 @@ const recordClientPayment = async (req, res) => {
     }
   };
 
-module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits, downloadCreditPDF };
+  const recalculateDebt = async (req, res) => {
+    try {
+      const Sale = require('../models/Sale');
+      const client = await Client.findById(req.params.id);
+      if (!client) return res.status(404).json({ message: 'Client introuvable' });
+  
+      // Recalculer la dette réelle depuis les ventes
+      const sales = await Sale.find({
+        client: req.params.id,
+        paymentType: 'credit'
+      });
+  
+      const realDebt = sales.reduce((sum, s) => sum + s.remainingAmount, 0);
+      client.currentDebt = realDebt;
+      client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
+      await client.save();
+  
+      res.json({ message: 'Dette recalculée', client, realDebt });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  };
+
+module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits, downloadCreditPDF, recalculateDebt };
