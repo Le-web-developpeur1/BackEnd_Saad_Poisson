@@ -458,5 +458,102 @@ const generateCreditPDF = async (data, res) => {
   }
 };
 
+// ══════════════════════════════════════════════════════
+// GÉNÉRATION BULLETIN DE PAIE PDF
+// ══════════════════════════════════════════════════════
+const generateSalarySlipPDF = async (payment, employee, res) => {
+  let config = await SystemConfig.findOne();
+  if (!config) config = await SystemConfig.create({});
+
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=Bulletin-${employee.name}-${payment.period}.pdf`);
+  doc.pipe(res);
+
+  try {
+    const NAVY = '#1A2B5F';
+    const GOLD = '#D4A017';
+    const W = 595;
+
+    // En-tête
+    doc.rect(0, 0, W, 90).fill(NAVY);
+    if (config.logo) {
+      try {
+        if (config.logo.startsWith('data:')) {
+          const base64Data = config.logo.split(',')[1];
+          const buffer = Buffer.from(base64Data, 'base64');
+          doc.image(buffer, 20, 10, { width: 65, height: 65 });
+        }
+      } catch (e) {}
+    }
+    // Infos établissement à droite
+    doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF')
+    .text(config?.establishmentName || 'S.A.D POISSON', 110, 18);
+    doc.fontSize(9).font('Helvetica').fillColor(GOLD)
+      .text(config?.establishmentSubtitle || 'ENTREPRISE SAADE', 110, 40);
+    doc.fontSize(8).fillColor('#CCCCCC')
+      .text(config?.description || '', 110, 55);
+    doc.fontSize(8).fillColor('#CCCCCC')
+      .text(`${config?.address || ''} | Tél: ${config?.phone1 || ''}  -  ${config?.phone2 || ''}`, 110, 68);
+    doc.fontSize(8).fillColor('#CCCCCC')
+      .text(`Email: ${config?.email || ''}`, 110, 80);
+    // Titre
+    doc.rect(0, 90, W, 36).fill('#F1F5F9');
+    doc.fontSize(15).font('Helvetica-Bold').fillColor(NAVY)
+      .text('BULLETIN DE PAIE', 20, 100);
+    doc.moveTo(20, 126).lineTo(W - 20, 126).lineWidth(1.5).stroke(GOLD);
+
+    // Infos employé
+    let y = 145;
+    doc.roundedRect(20, y, W - 40, 100, 6).lineWidth(1).stroke(NAVY);
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('INFORMATIONS EMPLOYÉ', 32, y + 12);
+    doc.fontSize(9).font('Helvetica').fillColor('#333');
+    doc.text(`Nom : ${employee.name}`, 32, y + 30);
+    doc.text(`Poste : ${employee.position}`, 32, y + 46);
+    doc.text(`Téléphone : ${employee.phone || '—'}`, 32, y + 62);
+    doc.text(`Type de salaire : ${employee.salaryType === 'mensuel' ? 'Mensuel' : 'Journalier'}`, 32, y + 78);
+
+    doc.text(`Période : ${payment.period}`, 320, y + 30);
+    doc.text(`Date de paiement : ${new Date(payment.paymentDate).toLocaleDateString('fr-FR')}`, 320, y + 46);
+    if (payment.daysWorked) {
+      doc.text(`Jours travaillés : ${payment.daysWorked}`, 320, y + 62);
+    }
+
+    // Montant
+    y += 120;
+    doc.rect(20, y, W - 40, 50).fill(NAVY);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#FFFFFF').text('MONTANT NET PAYER', 32, y + 17);
+    doc.fontSize(18).font('Helvetica-Bold').fillColor(GOLD)
+      .text(`${formatAmount(payment.amount)} ${config.currency || 'GNF'}`, 32, y + 14, { align: 'right', width: W - 64 });
+
+
+    // Note
+    if (payment.note) {
+      y += 70;
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('Note :', 20, y);
+      doc.fontSize(9).font('Helvetica').fillColor('#555').text(payment.note, 20, y + 14, { width: W - 40 });
+    }
+
+    // Signatures
+    y += 90;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('Signature Employeur', 50, y);
+    doc.roundedRect(50, y + 15, 200, 50, 4).lineWidth(0.8).stroke('#CCCCCC');
+
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('Signature Employé', 320, y);
+    doc.roundedRect(320, y + 15, 200, 50, 4).lineWidth(0.8).stroke('#CCCCCC');
+
+    // Footer
+    doc.rect(0, 800, W, 42).fill(NAVY);
+    doc.fontSize(9).font('Helvetica-BoldOblique').fillColor(GOLD)
+      .text(config.invoiceFooter || 'Merci pour votre confiance !', 0, 816, { align: 'center', width: W });
+
+    doc.end();
+  } catch (err) {
+    console.error('Erreur bulletin paie:', err);
+    if (!res.headersSent) res.status(500).json({ message: 'Erreur génération bulletin' });
+    try { doc.end(); } catch (e) {}
+  }
+};
+
 // ── EXPORTS ───────────────────────────────────────────
-module.exports = { generateInvoicePDF, generateCreditPDF };
+module.exports = { generateInvoicePDF, generateCreditPDF, generateSalarySlipPDF };

@@ -202,7 +202,7 @@ const createSale = async (req, res) => {
     if (clientId && paymentType === 'credit') {
       const updateClient = await Client.findById(clientId);
       if (updateClient && updateClient.isBlocked) {
-        await nofifyUsers(
+        await notifyUsers(
           'clientBlocked',
           'Client bloqué',
           `${updateClient.name} a atteint son plafond de crédit (${updateClient.creditLimit.toLocaleString('fr-FR')} GNF)`,

@@ -17,6 +17,7 @@ const settingsRoutes    = require('./routes/settingsRoutes');
 const damageRoutes      = require('./routes/damageRoutes');
 const systemConfigRoutes = require('./routes/systemConfigRoutes');
 const notificationRoutes = require('./routes/notificationsRoutes');
+const employeeRoutes    = require('./routes/employeeRoutes');
 
 const app = express();
 
@@ -54,7 +55,8 @@ app.use('/api/reports',  reportRoutes);
 app.use('/api/damages',  damageRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/system',   systemConfigRoutes);
-app.use('/api/notifications', notificationRoutes)
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/employees', employeeRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
