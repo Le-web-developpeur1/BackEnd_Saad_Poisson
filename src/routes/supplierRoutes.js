@@ -4,7 +4,7 @@ const {
   getSuppliers, getSupplier, createSupplier,
   updateSupplier, deleteSupplier, recordSupplierPayment, recordPurchase
 } = require('../controllers/supplierController');
-const { protect, adminOrGestionnaire, adminOnly } = require('../middlewares/authMiddleware');
+const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
