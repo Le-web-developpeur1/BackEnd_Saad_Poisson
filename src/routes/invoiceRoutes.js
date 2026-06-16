@@ -4,7 +4,7 @@ const {
   getInvoices, getInvoice, createInvoice,
   saveClientSignature, deleteInvoice, downloadInvoicePDF 
 } = require('../controllers/invoiceController');
-const { protect, adminOrGestionnaire, adminOnly } = require('../middlewares/authMiddleware');
+const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
@@ -14,7 +14,7 @@ router.route('/')
 
 router.route('/:id')
   .get(getInvoice)
-  .delete(adminOnly, deleteInvoice);
+  .delete(adminOrGestionnaire, deleteInvoice);
 
 router.put('/:id/signature', saveClientSignature);
 router.get('/:id/pdf', downloadInvoicePDF);

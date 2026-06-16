@@ -4,7 +4,7 @@ const {
   getExpenses, getExpense, createExpense,
   updateExpense, deleteExpense
 } = require('../controllers/expenseController');
-const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
+const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
@@ -15,6 +15,6 @@ router.route('/')
 router.route('/:id')
   .get(getExpense)
   .put(updateExpense)
-  .delete(adminOrGestionnaire, deleteExpense);
+  .delete(adminOnly, deleteExpense);
 
 module.exports = router;

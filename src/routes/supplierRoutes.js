@@ -10,14 +10,14 @@ router.use(protect);
 
 router.route('/')
   .get(getSuppliers)
-  .post(adminOrGestionnaire, createSupplier);
+  .post(createSupplier);
 
 router.route('/:id')
   .get(getSupplier)
-  .put(adminOrGestionnaire, updateSupplier)
+  .put(updateSupplier)
   .delete(adminOnly, deleteSupplier);
 
 router.post('/:id/payment', recordSupplierPayment);
-router.post('/:id/purchase', adminOrGestionnaire, recordPurchase);
+router.post('/:id/purchase', recordPurchase);
 
 module.exports = router;

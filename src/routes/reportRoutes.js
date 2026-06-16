@@ -7,7 +7,7 @@ const {
 } = require('../controllers/reportController');
 const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
 
-router.use(protect, adminOrGestionnaire);
+router.use(protect);
 
 router.get('/daily', getDailyReport);
 router.get('/monthly', getMonthlyReport);

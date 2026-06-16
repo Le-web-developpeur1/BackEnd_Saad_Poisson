@@ -4,20 +4,20 @@ const {
   getProducts, getProduct, createProduct,
   updateProduct, deleteProduct, adjustStock, getLowStockProducts
 } = require('../controllers/productController');
-const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
+const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
 router.get('/alerts', getLowStockProducts);
 router.route('/')
   .get(getProducts)
-  .post(adminOrGestionnaire, createProduct);
+  .post(createProduct);
 
 router.route('/:id')
   .get(getProduct)
-  .put(adminOrGestionnaire, updateProduct)
-  .delete(adminOrGestionnaire, deleteProduct);
+  .put(updateProduct)
+  .delete(adminOnly, deleteProduct);
 
-router.post('/:id/stock', adminOrGestionnaire, adjustStock);
+router.post('/:id/stock', adjustStock);
 
 module.exports = router;
