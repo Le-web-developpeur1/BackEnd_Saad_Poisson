@@ -3,7 +3,7 @@ const Product = require('../models/Product');
 const Client = require('../models/Client');
 const StockMovement = require('../models/StockMovement');
 const Invoice = require('../models/Invoice');
-const { nofifyUsers } = require('../utils/notify');
+const { notifyUsers } = require('../utils/notify');
 
 const getSales = async (req, res) => {
   try {
