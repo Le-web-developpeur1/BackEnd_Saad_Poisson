@@ -3,6 +3,7 @@ const Product = require('../models/Product');
 const Client = require('../models/Client');
 const StockMovement = require('../models/StockMovement');
 const Invoice = require('../models/Invoice');
+const { nofifyUsers } = require('../utils/notify');
 
 const getSales = async (req, res) => {
   try {
@@ -190,9 +191,28 @@ const createSale = async (req, res) => {
       paymentConditions: paymentType === 'comptant' ? 'Paiement comptant' : 'Paiement à crédit',
       issuedBy: req.user._id
     });
+
+    await notifyUsers(
+      'newSale',
+      'Nouvelle vente',
+      `Vente ${saleNumber} enregistrée avec succès ! \n ${sale.clientName} - ${totalAmount.toLocaleString('fr-FR')} GNF`,
+      '/sales'
+    );
+
+    if (clientId && paymentType === 'credit') {
+      const updateClient = await Client.findById(clientId);
+      if (updateClient && updateClient.isBlocked) {
+        await nofifyUsers(
+          'clientBlocked',
+          'Client bloqué',
+          `${updateClient.name} a atteint son plafond de crédit (${updateClient.creditLimit.toLocaleString('fr-FR')} GNF)`,
+          '/credits'
+        );
+      }
+    }
     
-    console.log('Invoice créée:', createdInvoice._id, createdInvoice.invoiceNumber);
     res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });  
+    console.log('Invoice créée:', createdInvoice._id, createdInvoice.invoiceNumber);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

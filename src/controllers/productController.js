@@ -1,5 +1,6 @@
 const Product = require('../models/Product');
 const StockMovement = require('../models/StockMovement');
+const { notifyUsers } = require('../utils/notify');
 
 // @desc    Tous les produits
 // @route   GET /api/products
@@ -79,6 +80,15 @@ const adjustStock = async (req, res) => {
     }
 
     await product.save();
+
+    if (product.stockCartons <= product.alertThreshold) {
+      await notifyUsers (
+        'lowStock',
+        'Alerte stock bas',
+        `Le produit "${product.name}" est en sctock bas : ${product.stockCartons} cartons restants`,
+        '/products'
+      );
+    }
 
     await StockMovement.create({
       product: product._id,
