@@ -24,6 +24,8 @@ const app = express();
 // ── CORS en premier ───────────────────────────────
 app.use(cors({
   origin: [
+    'https://saadpoisson.com',
+    'https://www.saadpoisson.com',
     'https://saad-poisson.vercel.app',
     'http://localhost:5173'
   ],
