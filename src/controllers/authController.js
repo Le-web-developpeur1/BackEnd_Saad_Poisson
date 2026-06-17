@@ -8,8 +8,7 @@ const generateToken = (id) => {
   });
 };
 
-// @desc    Inscription
-// @route   POST /api/auth/register
+//===================Inscription==============\\
 const register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -40,8 +39,7 @@ const register = async (req, res) => {
   }
 };
 
-// @desc    Connexion
-// @route   POST /api/auth/login
+//===================Connexion=================\\
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -67,14 +65,12 @@ const login = async (req, res) => {
   }
 };
 
-// @desc    Profil connecté
-// @route   GET /api/auth/me
+//===================Infos Profil connecté======\\
 const getMe = async (req, res) => {
   res.json(req.user);
 };
 
-// @desc    Modifier mot de passe
-// @route   PUT /api/auth/password
+//===================Modifier mot de passe==========\\
 const updatePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -94,6 +90,7 @@ const updatePassword = async (req, res) => {
   }
 };
 
+//=================Récuperer tous les utilisateurs=======\\
 const getUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password').sort({ createdAt: -1 });
@@ -103,6 +100,7 @@ const getUsers = async (req, res) => {
   }
 };
 
+//=================Mise à jour d'un utilisateur============\\
 const updateUser = async (req, res) => {
   try {
     const { name, email, role } = req.body;
@@ -118,6 +116,7 @@ const updateUser = async (req, res) => {
   }
 };
 
+//=================Activation-Desactivation d'un utilisateur============\\
 const toggleUserStatus = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -130,4 +129,22 @@ const toggleUserStatus = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, updatePassword, getUsers, updateUser, toggleUserStatus };
+//================Suppression d'un utilisateur===============\\
+const deleteUser = async (req, res) => {
+  try {
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' });
+
+    // Empêcher l'admin de se supprimer lui-même
+    if (targetUser._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'Vous ne pouvez pas supprimer votre propre compte' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Utilisateur supprimé avec succès' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { register, login, getMe, updatePassword, getUsers, updateUser, toggleUserStatus, deleteUser };
