@@ -288,7 +288,6 @@ const exportSupplierReport = async (req, res) => {
 };
 
 // @desc    Rapport caisse complet
-// @route   GET /api/reports/caisse
 const getCaisseReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;

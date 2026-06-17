@@ -5,7 +5,6 @@ const { generateSalarySlipPDF } = require('../utils/generateInvoicePDF');
 
 
 // @desc    Tous les employés
-// @route   GET /api/employees
 const getEmployees = async (req, res) => {
   try {
     const employees = await Employee.find().sort({ name: 1 });
@@ -35,7 +34,6 @@ const getEmployees = async (req, res) => {
 };
 
 // @desc    Un employé + historique paiements
-// @route   GET /api/employees/:id
 const getEmployee = async (req, res) => {
   try {
     const employee = await Employee.findById(req.params.id);
@@ -49,7 +47,6 @@ const getEmployee = async (req, res) => {
 };
 
 // @desc    Créer un employé
-// @route   POST /api/employees
 const createEmployee = async (req, res) => {
   try {
     const employee = await Employee.create(req.body);
@@ -60,7 +57,6 @@ const createEmployee = async (req, res) => {
 };
 
 // @desc    Modifier un employé
-// @route   PUT /api/employees/:id
 const updateEmployee = async (req, res) => {
   try {
     const employee = await Employee.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
@@ -71,8 +67,7 @@ const updateEmployee = async (req, res) => {
   }
 };
 
-// @desc    Désactiver un employé
-// @route   DELETE /api/employees/:id
+// @desc    Supprimé un employé
 const deleteEmployee = async (req, res) => {
   try {
     const employee = await Employee.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
@@ -84,7 +79,6 @@ const deleteEmployee = async (req, res) => {
 };
 
 // @desc    Payer un salaire
-// @route   POST /api/employees/:id/pay
 const paySalary = async (req, res) => {
   try {
     const { amount, period, daysWorked, note } = req.body;
@@ -121,7 +115,6 @@ const paySalary = async (req, res) => {
 };
 
 // @desc    Stats salaires
-// @route   GET /api/employees/stats
 const getSalaryStats = async (req, res) => {
   try {
     const employees = await Employee.find({ isActive: true });

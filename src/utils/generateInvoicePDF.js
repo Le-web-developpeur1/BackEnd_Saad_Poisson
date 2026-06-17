@@ -26,7 +26,6 @@ const generateInvoicePDF = async (invoice, res) => {
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
 
   doc.on('error', (err) => {
-    console.error('Erreur PDFDocument:', err);
   });
 
   res.setHeader('Content-Type', 'application/pdf');
@@ -49,7 +48,6 @@ const generateInvoicePDF = async (invoice, res) => {
           doc.image(iconPath, x, y, { width: size, height: size });
         }
       } catch (e) {
-        console.log('Icône non chargée:', e.message);
       }
     };
 
@@ -85,7 +83,6 @@ const generateInvoicePDF = async (invoice, res) => {
           }
         }
       } catch (e) {
-        console.log('Logo non chargé:', e.message);
       }
     }
 
@@ -304,7 +301,6 @@ const generateInvoicePDF = async (invoice, res) => {
     doc.end();
 
   } catch (err) {
-    console.error('Erreur génération PDF:', err);
     if (!res.headersSent) {
       res.status(500).json({ message: 'Erreur génération PDF' });
     }
@@ -324,7 +320,6 @@ const generateCreditPDF = async (data, res) => {
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
 
   doc.on('error', (err) => {
-    console.error('Erreur PDFDocument Credit:', err);
   });
 
   res.setHeader('Content-Type', 'application/pdf');
@@ -450,7 +445,6 @@ const generateCreditPDF = async (data, res) => {
     doc.end();
 
   } catch (err) {
-    console.error('Erreur génération Credit PDF:', err);
     if (!res.headersSent) {
       res.status(500).json({ message: 'Erreur génération PDF' });
     }
@@ -549,7 +543,6 @@ const generateSalarySlipPDF = async (payment, employee, res) => {
 
     doc.end();
   } catch (err) {
-    console.error('Erreur bulletin paie:', err);
     if (!res.headersSent) res.status(500).json({ message: 'Erreur génération bulletin' });
     try { doc.end(); } catch (e) {}
   }

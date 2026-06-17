@@ -28,7 +28,6 @@ const notifyUsers = async (type, title, message, link = null) => {
       }
     }
   } catch (error) {
-    console.error('Erreur création notification:', error.message);
   }
 };
 

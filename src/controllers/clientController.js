@@ -69,9 +69,9 @@ const recordClientPayment = async (req, res) => {
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  };
+};
 
-  const getClientCredits = async (req, res) => {
+const getClientCredits = async (req, res) => {
     try {
       const client = await Client.findById(req.params.id);
       if (!client) return res.status(404).json({ message: 'Client introuvable' });
@@ -89,9 +89,9 @@ const recordClientPayment = async (req, res) => {
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  };
+};
 
-  const downloadCreditPDF = async (req, res) => {
+const downloadCreditPDF = async (req, res) => {
     try {
       const client = await Client.findById(req.params.id);
       if (!client) return res.status(404).json({ message: 'Client introuvable' });
@@ -110,9 +110,9 @@ const recordClientPayment = async (req, res) => {
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  };
+};
 
-  const recalculateDebt = async (req, res) => {
+const recalculateDebt = async (req, res) => {
     try {
       const Sale = require('../models/Sale');
       const client = await Client.findById(req.params.id);
@@ -133,6 +133,6 @@ const recordClientPayment = async (req, res) => {
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  };
+};
 
 module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits, downloadCreditPDF, recalculateDebt };

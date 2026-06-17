@@ -62,7 +62,6 @@ const invoice = await Invoice.create({
 };
 
 // @desc    Enregistrer la signature du client
-// @route   PUT /api/invoices/:id/signature
 const saveClientSignature = async (req, res) => {
   try {
     const { signature } = req.body;
@@ -88,7 +87,6 @@ const deleteInvoice = async (req, res) => {
 };
 
 // @desc    Télécharger facture en PDF
-// @route   GET /api/invoices/:id/pdf
 const downloadInvoicePDF = async (req, res) => {
     try {
       const invoice = await Invoice.findById(req.params.id)
@@ -100,7 +98,6 @@ const downloadInvoicePDF = async (req, res) => {
 
       await generateInvoicePDF(invoice, res);
     } catch (error) {
-      console.error('Erreur download PDF:', error);
           if (!res.headersSent) {
             res.status(500).json({ message: error.message });
           }    

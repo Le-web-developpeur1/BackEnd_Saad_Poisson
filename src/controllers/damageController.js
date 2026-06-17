@@ -3,7 +3,6 @@ const Product = require('../models/Product');
 const StockMovement = require('../models/StockMovement');
 
 // @desc    Toutes les avaries
-// @route   GET /api/damages
 const getDamages = async (req, res) => {
   try {
     const damages = await Damage.find()
@@ -17,7 +16,6 @@ const getDamages = async (req, res) => {
 };
 
 // @desc    Déclarer une avarie
-// @route   POST /api/damages
 const createDamage = async (req, res) => {
   try {
     const { product: productId, reason, quantityCartons = 0, quantityKg = 0, note } = req.body;
@@ -74,7 +72,6 @@ const createDamage = async (req, res) => {
 };
 
 // @desc    Supprimer une avarie
-// @route   DELETE /api/damages/:id
 const deleteDamage = async (req, res) => {
   try {
     await Damage.findByIdAndDelete(req.params.id);
@@ -85,7 +82,6 @@ const deleteDamage = async (req, res) => {
 };
 
 // @desc    Stats avaries
-// @route   GET /api/damages/stats
 const getDamageStats = async (req, res) => {
   try {
     const damages = await Damage.find();

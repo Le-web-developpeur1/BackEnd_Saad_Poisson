@@ -1,7 +1,6 @@
 const Settings = require('../models/Settings');
 
 // @desc    Récupérer les settings de l'utilisateur connecté
-// @route   GET /api/settings
 const getSettings = async (req, res) => {
   try {
     let settings = await Settings.findOne({ user: req.user._id });
@@ -15,7 +14,6 @@ const getSettings = async (req, res) => {
 };
 
 // @desc    Modifier les settings de l'utilisateur connecté
-// @route   PUT /api/settings
 const updateSettings = async (req, res) => {
   try {
     let settings = await Settings.findOne({ user: req.user._id });
@@ -42,7 +40,6 @@ const updateSettings = async (req, res) => {
 };
 
 // @desc    Réinitialiser les settings par défaut
-// @route   DELETE /api/settings/reset
 const resetSettings = async (req, res) => {
   try {
     await Settings.findOneAndDelete({ user: req.user._id });

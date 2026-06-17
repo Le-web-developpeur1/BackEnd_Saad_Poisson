@@ -111,7 +111,6 @@ const createSale = async (req, res) => {
         product.stockKg -= item.quantity;
         if (product.kgPerCarton > 0) {
           product.stockCartons = Math.floor(product.stockKg / product.kgPerCarton);
-          console.log('🔥 RECALCUL CARTONS:', product.name, '→ stockKg:', product.stockKg, '/ kgPerCarton:', product.kgPerCarton, '= stockCartons:', product.stockCartons);
         }
       }
 
@@ -219,13 +218,11 @@ const createSale = async (req, res) => {
     }
     
     res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });  
-    console.log('Invoice créée:', createdInvoice._id, createdInvoice.invoiceNumber);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 // @desc    Modifier une vente
-// @route   PUT /api/sales/:id
 const updateSale = async (req, res) => {
   try {
     const { discount, amountPaid, paymentType, status } = req.body;
@@ -283,7 +280,6 @@ const updateSale = async (req, res) => {
 };
 
 // @desc    Supprimer une vente (admin only)
-// @route   DELETE /api/sales/:id
 const deleteSale = async (req, res) => {
   try {
     const sale = await Sale.findById(req.params.id);

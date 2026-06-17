@@ -1,9 +1,6 @@
 const SystemConfig = require('../models/SystemConfig');
-const path = require('path');
-const fs = require('fs');
 
 // @desc    Récupérer la config système
-// @route   GET /api/system
 const getSystemConfig = async (req, res) => {
   try {
     let config = await SystemConfig.findOne();
@@ -17,7 +14,6 @@ const getSystemConfig = async (req, res) => {
 };
 
 // @desc    Modifier la config système (admin only)
-// @route   PUT /api/system
 const updateSystemConfig = async (req, res) => {
   try {
     let config = await SystemConfig.findOne();
@@ -45,7 +41,6 @@ const updateSystemConfig = async (req, res) => {
 };
 
 // @desc    Uploader le logo (admin only)
-// @route   POST /api/system/logo
 const uploadLogo = async (req, res) => {
   try {
     if (!req.file) {

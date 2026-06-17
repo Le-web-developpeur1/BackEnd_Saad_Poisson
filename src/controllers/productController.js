@@ -2,8 +2,7 @@ const Product = require('../models/Product');
 const StockMovement = require('../models/StockMovement');
 const { notifyUsers } = require('../utils/notify');
 
-// @desc    Tous les produits
-// @route   GET /api/products
+// @desc  Lister tous les produits
 const getProducts = async (req, res) => {
   try {
     const products = await Product.find({ isActive: true }).sort({ name: 1 });
@@ -13,8 +12,7 @@ const getProducts = async (req, res) => {
   }
 };
 
-// @desc    Un produit
-// @route   GET /api/products/:id
+// @desc  Lister  Un produit
 const getProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -26,7 +24,6 @@ const getProduct = async (req, res) => {
 };
 
 // @desc    Créer un produit
-// @route   POST /api/products
 const createProduct = async (req, res) => {
   try {
     const data = { ...req.body };
@@ -41,7 +38,6 @@ const createProduct = async (req, res) => {
 };
 
 // @desc    Modifier un produit
-// @route   PUT /api/products/:id
 const updateProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
@@ -53,7 +49,6 @@ const updateProduct = async (req, res) => {
 };
 
 // @desc    Supprimer un produit (désactivation)
-// @route   DELETE /api/products/:id
 const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
@@ -65,7 +60,6 @@ const deleteProduct = async (req, res) => {
 };
 
 // @desc    Ajuster le stock manuellement
-// @route   POST /api/products/:id/stock
 const adjustStock = async (req, res) => {
   try {
     const { quantityCartons, quantityKg, reason, type } = req.body;
@@ -111,7 +105,6 @@ const adjustStock = async (req, res) => {
 };
 
 // @desc    Produits en alerte de stock
-// @route   GET /api/products/alerts
 const getLowStockProducts = async (req, res) => {
   try {
     const products = await Product.find({
