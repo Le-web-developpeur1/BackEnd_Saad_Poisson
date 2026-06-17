@@ -29,7 +29,11 @@ const getProduct = async (req, res) => {
 // @route   POST /api/products
 const createProduct = async (req, res) => {
   try {
-    const product = await Product.create(req.body);
+    const data = { ...req.body };
+    if (data.stockCartons && data.kgPerCarton) {
+      data.stockKg = data.stockCartons * data.kgPerCarton;
+    }
+    const product = await Product.create(data);
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: error.message });

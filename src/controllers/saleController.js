@@ -109,7 +109,14 @@ const createSale = async (req, res) => {
         product.stockKg -= item.quantity * product.kgPerCarton;
       } else {
         product.stockKg -= item.quantity;
+        if (product.kgPerCarton > 0) {
+          product.stockCartons = Math.floor(product.stockKg / product.kgPerCarton);
+          console.log('🔥 RECALCUL CARTONS:', product.name, '→ stockKg:', product.stockKg, '/ kgPerCarton:', product.kgPerCarton, '= stockCartons:', product.stockCartons);
+        }
       }
+
+      product.stockCartons = Math.max(0, product.stockCartons);
+      product.stockKg = Math.max(0, product.stockKg);
       await product.save();
 
       // Mouvement de stock
