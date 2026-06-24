@@ -131,7 +131,7 @@ const createSale = async (req, res) => {
     }
 
     const totalAmount = subTotal - discount;
-    const paid = amountPaid || (paymentType === 'comptant' ? totalAmount : 0);
+    const paid = amountPaid || (paymentType === 'comptant' || paymentType === 'virement' ? totalAmount : 0);
 
     let status = 'payé';
     if (paid === 0) status = 'crédit';

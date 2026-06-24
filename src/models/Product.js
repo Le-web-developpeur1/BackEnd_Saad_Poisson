@@ -10,6 +10,11 @@ const productSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  stockInitialCartons: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   stockCartons: {
     type: Number,
     default: 0,
@@ -33,6 +38,11 @@ const productSchema = new mongoose.Schema({
   pricePerKg: {
     type: Number,
     required: [true, 'Le prix par kg est obligatoire'],
+    min: 0
+  },
+  purchasePricePerCarton: {
+    type: Number,
+    default: 0,
     min: 0
   },
   alertThreshold: {

@@ -4,6 +4,7 @@ const {
   getDailyReport, getMonthlyReport, getStockReport, getDebtReport, getSupplierReport,
   exportDailyReport, exportMonthlyReport, exportStockReport, exportDebtReport, 
   exportSupplierReport, getCaisseReport,
+  getCapitalReport,
 } = require('../controllers/reportController');
 const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
 
@@ -21,5 +22,6 @@ router.get('/stock/export', exportStockReport);
 router.get('/debts/export', exportDebtReport);
 router.get('/suppliers/export', exportSupplierReport);
 router.get('/caisse', getCaisseReport);
+router.get('/capital', getCapitalReport);
 
 module.exports = router;

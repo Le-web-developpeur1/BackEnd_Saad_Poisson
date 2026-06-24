@@ -1,6 +1,8 @@
 const Client = require('../models/Client');
 const Sale = require('../models/Sale');
-const {generateCreditPDF} = require('../utils/generateInvoicePDF')
+const {generateCreditPDF, generateClientPaymentReceiptPDF} = require('../utils/generateInvoicePDF')
+const ClientPayment = require('../models/ClientPayment');
+const SystemConfig  = require('../models/SystemConfig');
 
 const getClients = async (req, res) => {
   try {
@@ -64,8 +66,39 @@ const recordClientPayment = async (req, res) => {
       client.currentDebt -= amount;
       client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
       await client.save();
-  
-      res.json({ message: 'Paiement enregistré', client });
+      
+      //Mettre à jour les ventes à crédit (du plus ancien au plus récent)
+      let remainingPayment = amount;
+      const creditSales = await Sale.find({
+        client: client._id,
+        paymentType: 'credit',
+        remainingAmount: { $gt: 0 }
+      }).sort({ createAt: 1 });
+
+      for (const sale of creditSales) {
+        if (remainingPayment <= 0) break;
+
+        const payment = Math.min(remainingPayment, sale.remainingAmount);
+        sale.amountPaid += payment;
+        sale.remainingAmount -= payment;
+
+        if (sale.remainingAmount === 0) sale.status = 'payé';
+        else sale.status = 'partiel';
+
+        await sale.save();
+      }
+
+      //Créer un enregistrement de paiement pour la caisse
+      const newPayment = await ClientPayment.create({
+        client: client.id,
+        clientName: client.name,
+        clientPhone: client.phone || '',
+        amount: Number(amount),
+        remainingDebt: client.currentDebt,
+        paidBy: req.user._id,
+      });
+
+      res.json({ message: 'Paiement enregistré', client, paymentId: newPayment._id });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -135,4 +168,16 @@ const recalculateDebt = async (req, res) => {
     }
 };
 
-module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits, downloadCreditPDF, recalculateDebt };
+const downloadPaymentReceipt = async (req, res) => {
+  try {
+    const payment = await ClientPayment.findById(req.params.paymentId);
+    if (!payment) return res.status(404).json({ message: "Paiement introuvable" });
+    let config = await SystemConfig.findOne();
+    if (!config) config = {};
+    await generateClientPaymentReceiptPDF(payment, config, res);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits, downloadCreditPDF, recalculateDebt, downloadPaymentReceipt };

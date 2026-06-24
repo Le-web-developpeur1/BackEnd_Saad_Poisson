@@ -548,5 +548,104 @@ const generateSalarySlipPDF = async (payment, employee, res) => {
   }
 };
 
+
+// ══════════════════════════════════════════════════════
+// GÉNÉRATION RECU DE PAIEMENT CREDIT PDF
+// ══════════════════════════════════════════════════════
+const generateClientPaymentReceiptPDF = async (payment, config, res) => {
+  const doc = new PDFDocument({ size: 'A5', margin: 0 });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=Recu-${payment.clientName}.pdf`);
+  doc.pipe(res);
+
+  try {
+    const NAVY = '#1A2B5F';
+    const GOLD = '#D4A017';
+    const W    = 420; // A5 width
+
+    // En-tête
+    doc.rect(0, 0, W, 80).fill(NAVY);
+    if (config?.logo?.startsWith('data:')) {
+      try {
+        const buffer = Buffer.from(config.logo.split(',')[1], 'base64');
+        doc.image(buffer, 16, 8, { width: 60, height: 60 });
+      } catch (e) {}
+    }
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#FFFFFF')
+  .text(config?.establishmentName || 'S.A.D POISSON', 90, 18);
+
+doc.fontSize(9).fillColor(GOLD)
+  .text(config?.establishmentSubtitle || '', 90, 38);
+
+// Adresse en dessous du sous-titre
+doc.fontSize(7.5).fillColor('#CCCCCC')
+  .text(`Adresse: ${config?.email || ''}`, 90, 50);
+
+// Téléphones en dessous de l’adresse
+doc.fontSize(7.5).fillColor('#CCCCCC')
+  .text(`Tél: ${config?.phone1 || ''} | ${config?.phone2 || ''}`, 90, 62);
+
+    // Titre reçu
+    doc.rect(0, 80, W, 30).fill('#F1F5F9');
+    doc.fontSize(13).font('Helvetica-Bold').fillColor(NAVY)
+      .text('REÇU DE PAIEMENT', 0, 90, { align: 'center', width: W });
+
+    // Numéro et date
+    const date = new Date(payment.createdAt);
+    doc.fontSize(8).font('Helvetica').fillColor(NAVY)
+      .text(`N° : ${payment._id.toString().slice(-8).toUpperCase()}`, 20, 124)
+      .text(`Date : ${date.toLocaleDateString('fr-FR')} à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, 20, 138);
+
+    // Infos client
+    doc.roundedRect(20, 160, W - 40, 70, 6).lineWidth(1).stroke(NAVY);
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY).text('CLIENT', 32, 170);
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Nom : ${payment.clientName}`, 32, 186)
+      .text(`Téléphone : ${payment.clientPhone || '—'}`, 32, 202);
+
+    // Montant payé
+    doc.rect(20, 248, W - 40, 50).fill(NAVY);
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#FFFFFF')
+      .text('MONTANT REÇU', 32, 260);
+    doc.fontSize(18).font('Helvetica-Bold').fillColor(GOLD)
+      .text(`${formatAmount(payment.amount)} ${config?.currency || 'GNF'}`, 32, 257, { align: 'right', width: W - 64 });
+
+    // Reste de la dette
+    doc.roundedRect(20, 310, W - 40, 36, 6).lineWidth(1).stroke(NAVY);
+    doc.fontSize(9).font('Helvetica').fillColor('#555')
+      .text('Crédit restant à payé :', 32, 322);
+    doc.fontSize(9).font('Helvetica-Bold')
+      .fillColor(payment.remainingDebt > 0 ? '#DC2626' : '#16A34A')
+      .text(
+        `${formatAmount(payment.remainingDebt)} ${config?.currency || 'GNF'}`,
+        32, 322,
+        { align: 'right', width: W - 64 }
+      );
+
+    // Signature
+    const sigY = 370;
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY)
+      .text('Signature du caissier', 30, sigY);
+    doc.roundedRect(30, sigY + 14, 160, 40, 4).lineWidth(0.8).stroke('#CCCCCC');
+
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(NAVY)
+      .text('Signature du client', 220, sigY);
+    doc.roundedRect(220, sigY + 14, 160, 40, 4).lineWidth(0.8).stroke('#CCCCCC');
+
+    // Footer
+    doc.rect(0, 580 - 30, W, 30).fill(NAVY);
+    doc.fontSize(8).font('Helvetica-BoldOblique').fillColor(GOLD)
+      .text(config?.invoiceFooter || 'Merci pour votre confiance !', 0, 580 - 20, { align: 'center', width: W });
+
+    doc.end();
+  } catch (err) {
+    console.error('Erreur reçu PDF:', err);
+    if (!res.headersSent) res.status(500).json({ message: 'Erreur génération reçu' });
+    try { doc.end(); } catch (e) {}
+  }
+};
+
 // ── EXPORTS ───────────────────────────────────────────
-module.exports = { generateInvoicePDF, generateCreditPDF, generateSalarySlipPDF };
+module.exports = { generateInvoicePDF, generateCreditPDF, generateSalarySlipPDF, generateClientPaymentReceiptPDF };
+

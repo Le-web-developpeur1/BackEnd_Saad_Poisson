@@ -3,10 +3,9 @@ const router = express.Router();
 const {
   getClients, getClient, createClient,
   updateClient, deleteClient, recordClientPayment, getClientCredits,
-  downloadCreditPDF,
-  recalculateDebt
+  downloadCreditPDF,recalculateDebt, downloadPaymentReceipt
 } = require('../controllers/clientController');
-const { protect, adminOrGestionnaire, adminOnly } = require('../middlewares/authMiddleware');
+const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
@@ -17,11 +16,12 @@ router.route('/')
 router.route('/:id')
   .get(getClient)
   .put(updateClient)
-  .delete(adminOnly, deleteClient);
+  .delete(deleteClient);
 
 router.post('/:id/payment', recordClientPayment);
 router.get('/:id/credits', getClientCredits);
 router.get('/:id/credits/pdf', downloadCreditPDF);
 router.post('/:id/recalculate', adminOnly, recalculateDebt);
+router.get('/payments/:paymentId/receipt', downloadPaymentReceipt)
 
 module.exports = router;

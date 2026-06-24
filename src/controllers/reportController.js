@@ -5,14 +5,14 @@ const Client = require('../models/Client');
 const Supplier = require('../models/Supplier');
 const StockMovement = require('../models/StockMovement');
 const SystemConfig = require('../models/SystemConfig');
-
+const Damage = require('../models/Damage');
+const ClientPayment = require('../models/ClientPayment');
 const { exportPDF, exportWord, exportCSV } = require('../utils/exportReport');
 
 const formatAmount = (amount) => {
   if (amount === undefined || amount === null || isNaN(amount)) return '0';
   return Number(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
-
 
 const getDailyReport = async (req, res) => {
   try {
@@ -99,9 +99,6 @@ const getSupplierReport = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
-// ── EXPORTS ───────────────────────────────────────────
-
 
 const exportDailyReport = async (req, res) => {
   try {
@@ -211,9 +208,9 @@ const exportStockReport = async (req, res) => {
     const totalCartons = products.reduce((sum, p) => sum + p.stockCartons, 0);
     const totalKg      = products.reduce((sum, p) => sum + p.stockKg, 0);
     const totals = [
-      { label: 'Total produits',       value: String(products.length), highlight: false },
-      { label: 'Total cartons en stock', value: String(totalCartons),  highlight: false },
-      { label: 'Total kg en stock',    value: `${totalKg} kg`,         highlight: true  },
+      { label: 'Total produits',         value: String(products.length), highlight: false },
+      { label: 'Total cartons en stock', value: String(totalCartons),    highlight: false },
+      { label: 'Total kg en stock',      value: `${totalKg} kg`,         highlight: true  },
     ];
 
     if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-stocks', totals, config);
@@ -242,8 +239,8 @@ const exportDebtReport = async (req, res) => {
 
     const totalDette = clients.reduce((sum, c) => sum + c.currentDebt, 0);
     const totals = [
-      { label: 'Nombre de clients débiteurs', value: String(clients.length), highlight: false },
-      { label: 'Total dettes',                value: `${formatAmount(totalDette)} GNF`, highlight: true },
+      { label: 'Nombre de clients débiteurs', value: String(clients.length),           highlight: false },
+      { label: 'Total dettes',                value: `${formatAmount(totalDette)} GNF`, highlight: true  },
     ];
 
     if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-dettes', totals, config);
@@ -274,9 +271,9 @@ const exportSupplierReport = async (req, res) => {
     const totalPaye    = suppliers.reduce((sum, s) => sum + s.totalPaid, 0);
     const totalRestant = suppliers.reduce((sum, s) => sum + s.balance, 0);
     const totals = [
-      { label: 'Total achats',    value: `${formatAmount(totalAchats)} GNF`,   highlight: false },
-      { label: 'Total payé',      value: `${formatAmount(totalPaye)} GNF`,     highlight: false },
-      { label: 'Total à payer',   value: `${formatAmount(totalRestant)} GNF`,  highlight: true  },
+      { label: 'Total achats',  value: `${formatAmount(totalAchats)} GNF`,   highlight: false },
+      { label: 'Total payé',    value: `${formatAmount(totalPaye)} GNF`,     highlight: false },
+      { label: 'Total à payer', value: `${formatAmount(totalRestant)} GNF`,  highlight: true  },
     ];
 
     if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-fournisseurs', totals, config);
@@ -287,7 +284,6 @@ const exportSupplierReport = async (req, res) => {
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
-// @desc    Rapport caisse complet
 const getCaisseReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -300,20 +296,20 @@ const getCaisseReport = async (req, res) => {
       };
     }
 
-    const sales    = await Sale.find(filter).sort({ createdAt: -1 });
-    const expenses = await Expense.find(
+    const sales          = await Sale.find(filter).sort({ createdAt: -1 });
+    const clientPayments = await ClientPayment.find(filter.createdAt ? { createdAt: filter.createdAt } : {});
+    const totalClientPayments = clientPayments.reduce((sum, p) => sum + p.amount, 0);
+    const expenses       = await Expense.find(
       startDate && endDate ? { date: { $gte: new Date(startDate), $lte: new Date(endDate) } } : {}
     );
 
-    // Totaux globaux
-    const totalEncaisse    = sales.reduce((sum, s) => sum + s.amountPaid, 0);
-    const totalVentes      = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const totalCredit      = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.remainingAmount, 0);
-    const totalComptant    = sales.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
-    const totalDepenses    = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const soldeCaisse      = totalEncaisse - totalDepenses;
+    const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0) + totalClientPayments;
+    const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const totalCredit   = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.remainingAmount, 0);
+    const totalComptant = sales.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const soldeCaisse   = totalEncaisse - totalDepenses;
 
-    // Stats aujourd'hui
     const today      = new Date();
     const startToday = new Date(today.setHours(0, 0, 0, 0));
     const endToday   = new Date(today.setHours(23, 59, 59, 999));
@@ -324,7 +320,6 @@ const getCaisseReport = async (req, res) => {
     const encaisseAujourdhui = salesToday.reduce((sum, s) => sum + s.amountPaid, 0);
     const depensesAujourdhui = expensesToday.reduce((sum, e) => sum + e.amount, 0);
 
-    // Stats ce mois
     const now        = new Date();
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -332,35 +327,113 @@ const getCaisseReport = async (req, res) => {
     const salesMonth    = await Sale.find({ createdAt: { $gte: startMonth, $lte: endMonth } });
     const expensesMonth = await Expense.find({ date: { $gte: startMonth, $lte: endMonth } });
 
-    const encaisseMois   = salesMonth.reduce((sum, s) => sum + s.amountPaid, 0);
-    const depensesMois   = expensesMonth.reduce((sum, e) => sum + e.amount, 0);
-    const soldeMois      = encaisseMois - depensesMois;
+    const encaisseMois = salesMonth.reduce((sum, s) => sum + s.amountPaid, 0);
+    const depensesMois = expensesMonth.reduce((sum, e) => sum + e.amount, 0);
+    const soldeMois    = encaisseMois - depensesMois;
 
     res.json({
-      // Totaux globaux
-      totalVentes,
-      totalEncaisse,
-      totalComptant,
-      totalCredit,
-      totalDepenses,
-      soldeCaisse,
-      nbTransactions: sales.length,
-
-      // Aujourd'hui
-      encaisseAujourdhui,
-      depensesAujourdhui,
+      totalVentes, totalEncaisse, totalComptant, totalCredit,
+      totalDepenses, soldeCaisse, nbTransactions: sales.length,
+      encaisseAujourdhui, depensesAujourdhui,
       soldeAujourdhui: encaisseAujourdhui - depensesAujourdhui,
       nbTransactionsAujourdhui: salesToday.length,
-
-      // Ce mois
-      encaisseMois,
-      depensesMois,
-      soldeMois,
+      encaisseMois, depensesMois, soldeMois,
       nbTransactionsMois: salesMonth.length,
+      sales, expenses
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
-      // Détail ventes
-      sales,
-      expenses
+const getCapitalReport = async (req, res) => {
+  try {
+    const products       = await Product.find({ isActive: true });
+    console.log('Produits:', products.map(p => ({
+      name: p.name,
+      stockInitialCartons: p.stockInitialCartons,
+      stockCartons: p.stockCartons,
+      purchasePricePerCarton: p.purchasePricePerCarton
+    })));
+    const sales          = await Sale.find();
+    const damages        = await Damage.find();
+    const expenses       = await Expense.find();
+    const clients        = await Client.find({ isActive: true });
+    const clientPayments = await ClientPayment.find();
+
+    // ── 1. CAPITAL INITIAL ─────────────────────────
+    // Somme de (stockInitialCartons × purchasePricePerCarton)
+    const capitalInitial = products.reduce((sum, p) =>
+      sum + ((p.stockInitialCartons || 0) * (p.purchasePricePerCarton || 0)), 0
+    );
+
+    // ── 2. CHIFFRE D'AFFAIRES ESTIMÉ ───────────────
+    // Somme de (stockCartons actuels × pricePerCarton)
+    const chiffreAffairesEstime = products.reduce((sum, p) =>
+      sum + ((p.stockInitialCartons || 0) * p.pricePerCarton), 0
+    );
+    
+    // ── 7. AVARIES ────────────────────────────────
+    const avaries = damages.reduce((sum, d) => sum + d.estimatedLoss, 0);
+
+    // ── 3. STOCK FINAL ────────────────────────────────
+// Capital initial - valeur des ventes au prix d'achat - avaries
+const valeurVentesAchat = sales.reduce((sum, s) => {
+  return sum + s.items.reduce((iSum, item) => {
+    const product = products.find(p => p._id.toString() === item.product.toString());
+    if (!product) return iSum;
+    const prixAchat  = product.purchasePricePerCarton || 0;
+    const qtyCartons = item.unit === 'carton'
+      ? item.quantity
+      : item.quantity / (product.kgPerCarton || 1);
+    return iSum + (qtyCartons * prixAchat);
+  }, 0);
+}, 0);
+
+const stockFinal = Math.max(0, capitalInitial - valeurVentesAchat - avaries);
+
+    // ── 4. CAISSE ─────────────────────────────────
+    const totalVentesComptant = sales
+      .filter(s => s.paymentType === 'comptant')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+
+    const totalAcomptes = sales
+      .filter(s => s.paymentType === 'credit')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+
+    const totalClientPayments = clientPayments.reduce((sum, p) => sum + p.amount, 0);
+    const totalDepenses       = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const caisse              = totalVentesComptant + totalAcomptes + totalClientPayments - totalDepenses;
+
+    // ── 5. BANQUE ──────────────────────────────────
+    const banque = sales
+      .filter(s => s.paymentType === 'virement')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+
+    // ── 6. CRÉDITS ────────────────────────────────
+    const credits = clients.reduce((sum, c) => sum + c.currentDebt, 0);
+
+    
+    // ── 8. CAPITAL DISPONIBLE ─────────────────────────
+// Stock final + Caisse + Banque + Crédits - Dépenses
+const capitalDisponible = stockFinal + caisse + banque + credits - totalDepenses;
+    res.json({
+      capitalInitial,
+      chiffreAffairesEstime,
+      stockFinal,
+      caisse,
+      banque,
+      credits,
+      avaries,
+      totalDepenses,
+      capitalDisponible,
+      details: {
+        totalVentesComptant,
+        totalAcomptes,
+        totalClientPayments,
+        nbProduits:  products.length,
+        nbClients:   clients.filter(c => c.currentDebt > 0).length,
+      }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -368,7 +441,8 @@ const getCaisseReport = async (req, res) => {
 };
 
 module.exports = {
-  getDailyReport, getMonthlyReport, getStockReport, getDebtReport, getSupplierReport,
-  exportDailyReport, exportMonthlyReport, exportStockReport, exportDebtReport, exportSupplierReport,
-  getCaisseReport
+  getDailyReport, getMonthlyReport, getStockReport, getDebtReport,
+  getSupplierReport, exportDailyReport, exportMonthlyReport,
+  exportStockReport, exportDebtReport, exportSupplierReport,
+  getCaisseReport, getCapitalReport
 };

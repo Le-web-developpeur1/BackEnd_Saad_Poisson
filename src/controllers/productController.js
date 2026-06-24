@@ -27,6 +27,8 @@ const getProduct = async (req, res) => {
 const createProduct = async (req, res) => {
   try {
     const data = { ...req.body };
+    data.stockInitialCartons = data.stockCartons || 0;
+
     if (data.stockCartons && data.kgPerCarton) {
       data.stockKg = data.stockCartons * data.kgPerCarton;
     }
@@ -69,12 +71,14 @@ const adjustStock = async (req, res) => {
     if (type === 'entrée') {
       product.stockCartons += quantityCartons || 0;
       product.stockKg += quantityKg || 0;
+      product.stockInitialCartons += quantityCartons || 0;
     } else if (type === 'sortie') {
       product.stockCartons -= quantityCartons || 0;
       product.stockKg -= quantityKg || 0;
     } else {
       product.stockCartons = quantityCartons || product.stockCartons;
       product.stockKg = quantityKg || product.stockKg;
+      product.stockInitialCartons = product.stockCartons;
     }
 
     await product.save();
