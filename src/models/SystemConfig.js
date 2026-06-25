@@ -49,6 +49,10 @@ const systemConfigSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  tauxFCFA: {
+    type: Number,
+    default: 10
+  },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

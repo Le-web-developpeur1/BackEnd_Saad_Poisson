@@ -4,9 +4,7 @@ const SystemConfig = require('../models/SystemConfig');
 const getSystemConfig = async (req, res) => {
   try {
     let config = await SystemConfig.findOne();
-    if (!config) {
-      config = await SystemConfig.create({});
-    }
+    if (!config) config = await SystemConfig.create({});
     res.json(config);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -22,7 +20,7 @@ const updateSystemConfig = async (req, res) => {
     const allowedFields = [
       'establishmentName', 'establishmentSubtitle', 'description',
       'address', 'phone1', 'phone2', 'email', 'currency',
-      'invoiceFooter', 'invoiceTagline', 'tvaRate'
+      'invoiceFooter', 'invoiceTagline', 'tvaRate', 'tauxFCFA' // ← ajouté
     ];
 
     allowedFields.forEach(field => {
@@ -50,7 +48,6 @@ const uploadLogo = async (req, res) => {
     let config = await SystemConfig.findOne();
     if (!config) config = await SystemConfig.create({});
 
-    // Convertir en base64 et stocker dans MongoDB
     const base64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
     config.logo = base64;
     config.updatedBy = req.user._id;
