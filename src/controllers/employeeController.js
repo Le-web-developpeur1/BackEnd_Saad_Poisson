@@ -1,5 +1,6 @@
 const Employee = require('../models/Employee');
 const SalaryPayment = require('../models/SalaryPayment');
+const SalaryAdvance = require('../models/SalaryAdvance');
 const Expense = require('../models/Expense');
 const { generateSalarySlipPDF } = require('../utils/generateInvoicePDF');
 
@@ -85,30 +86,54 @@ const paySalary = async (req, res) => {
     const employee = await Employee.findById(req.params.id);
     if (!employee) return res.status(404).json({ message: 'Employé introuvable' });
 
-    // Créer la dépense automatiquement
+    // Récupérer les avances en attente
+    const advancesEnAttente = await SalaryAdvance.find({
+      employee: employee._id,
+      status:   'en_attente'
+    });
+    const totalAvances = advancesEnAttente.reduce((sum, a) => sum + a.amount, 0);
+
+    // Montant net à payer = salaire - avances
+    const montantBrut = Number(amount);
+    const montantNet  = Math.max(0, montantBrut - totalAvances);
+
+    // Créer la dépense pour le net payé
     const expense = await Expense.create({
-      title: `Salaire — ${employee.name} (${period})`,
-      category: 'salaire',
-      amount: Number(amount),
-      date: new Date(),
-      note: note || `Paiement salaire ${employee.position}`,
+      title:      `Salaire — ${employee.name} (${period})`,
+      category:   'salaire',
+      amount:     montantNet,
+      date:       new Date(),
+      note:       note || `Paiement salaire ${employee.position} — Brut: ${montantBrut} GNF, Avances déduites: ${totalAvances} GNF`,
       recordedBy: req.user._id
     });
 
-    // Enregistrer le paiement de salaire
+    // Enregistrer le paiement
     const payment = await SalaryPayment.create({
-      employee: employee._id,
+      employee:     employee._id,
       employeeName: employee.name,
-      position: employee.position,
+      position:     employee.position,
       period,
-      daysWorked: daysWorked || null,
-      amount: Number(amount),
+      daysWorked:   daysWorked || null,
+      amount:       montantNet,
       note,
-      paidBy: req.user._id,
-      expenseId: expense._id
+      paidBy:       req.user._id,
+      expenseId:    expense._id
     });
 
-    res.status(201).json({ message: 'Salaire payé avec succès', payment, expense });
+    // Marquer les avances comme déduites
+    await SalaryAdvance.updateMany(
+      { employee: employee._id, status: 'en_attente' },
+      { status: 'déduit', deductedFrom: payment._id }
+    );
+
+    res.status(201).json({
+      message:      'Salaire payé avec succès',
+      payment,
+      expense,
+      montantBrut,
+      totalAvances,
+      montantNet
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -152,5 +177,60 @@ const downloadSalarySlip = async (req, res) => {
       res.status(500).json({ message: error.message });
     }
 };
+
+// @desc    Accorder une avance sur salaire
+// @route   POST /api/employees/:id/advance
+const giveAdvance = async (req, res) => {
+  try {
+    const { amount, reason } = req.body;
+    const employee = await Employee.findById(req.params.id);
+    if (!employee) return res.status(404).json({ message: 'Employé introuvable' });
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ message: 'Montant invalide' });
+
+    // Créer une dépense automatiquement
+    const expense = await Expense.create({
+      title:      `Avance sur salaire — ${employee.name}`,
+      category:   'salaire',
+      amount:     Number(amount),
+      date:       new Date(),
+      note:       reason || `Avance sur salaire de ${employee.position}`,
+      recordedBy: req.user._id
+    });
+
+    // Enregistrer l'avance
+    const advance = await SalaryAdvance.create({
+      employee:     employee._id,
+      employeeName: employee.name,
+      amount:       Number(amount),
+      reason:       reason || '',
+      status:       'en_attente',
+      paidBy:       req.user._id,
+      expenseId:    expense._id
+    });
+
+    res.status(201).json({ message: 'Avance enregistrée', advance, expense });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Historique des avances d'un employé
+// @route   GET /api/employees/:id/advances
+const getAdvances = async (req, res) => {
+  try {
+    const advances = await SalaryAdvance.find({ employee: req.params.id })
+      .sort({ createdAt: -1 });
+    const totalEnAttente = advances
+      .filter(a => a.status === 'en_attente')
+      .reduce((sum, a) => sum + a.amount, 0);
+    res.json({ advances, totalEnAttente });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
   
-module.exports = { getEmployees, getEmployee, createEmployee, updateEmployee, deleteEmployee, paySalary, getSalaryStats, downloadSalarySlip };
+module.exports = {
+  getEmployees, getEmployee, createEmployee, updateEmployee,
+  deleteEmployee, paySalary, getSalaryStats,
+  downloadSalarySlip, giveAdvance, getAdvances
+};
