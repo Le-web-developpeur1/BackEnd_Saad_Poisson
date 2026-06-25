@@ -349,12 +349,6 @@ const getCaisseReport = async (req, res) => {
 const getCapitalReport = async (req, res) => {
   try {
     const products       = await Product.find({ isActive: true });
-    console.log('Produits:', products.map(p => ({
-      name: p.name,
-      stockInitialCartons: p.stockInitialCartons,
-      stockCartons: p.stockCartons,
-      purchasePricePerCarton: p.purchasePricePerCarton
-    })));
     const sales          = await Sale.find();
     const damages        = await Damage.find();
     const expenses       = await Expense.find();
@@ -397,13 +391,17 @@ const stockFinal = Math.max(0, capitalInitial - valeurVentesAchat - avaries);
       .filter(s => s.paymentType === 'comptant')
       .reduce((sum, s) => sum + s.amountPaid, 0);
 
-    const totalAcomptes = sales
+    
+    const totalClientPayments = clientPayments.reduce((sum, p) => sum + p.amount, 0);
+
+    const totalAcomptesPaidCredit = sales
       .filter(s => s.paymentType === 'credit')
       .reduce((sum, s) => sum + s.amountPaid, 0);
+    
+    const totalAcomptesInitiaux = Math.max(0, totalAcomptesPaidCredit - totalClientPayments);
 
-    const totalClientPayments = clientPayments.reduce((sum, p) => sum + p.amount, 0);
     const totalDepenses       = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const caisse              = totalVentesComptant + totalAcomptes + totalClientPayments - totalDepenses;
+    const caisse              = totalVentesComptant + totalAcomptesInitiaux + totalClientPayments - totalDepenses;
 
     // ── 5. BANQUE ──────────────────────────────────
     const banque = sales
@@ -415,8 +413,8 @@ const stockFinal = Math.max(0, capitalInitial - valeurVentesAchat - avaries);
 
     
     // ── 8. CAPITAL DISPONIBLE ─────────────────────────
-// Stock final + Caisse + Banque + Crédits - Dépenses
-const capitalDisponible = stockFinal + caisse + banque + credits - totalDepenses;
+// Stock final + Caisse + Banque + Crédits 
+const capitalDisponible = stockFinal + caisse + banque + credits;
     res.json({
       capitalInitial,
       chiffreAffairesEstime,
@@ -429,8 +427,9 @@ const capitalDisponible = stockFinal + caisse + banque + credits - totalDepenses
       capitalDisponible,
       details: {
         totalVentesComptant,
-        totalAcomptes,
+        totalAcomptesInitiaux,
         totalClientPayments,
+        valeurVentesAchat,
         nbProduits:  products.length,
         nbClients:   clients.filter(c => c.currentDebt > 0).length,
       }

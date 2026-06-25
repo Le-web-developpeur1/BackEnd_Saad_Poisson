@@ -180,4 +180,86 @@ const downloadPaymentReceipt = async (req, res) => {
   }
 };
 
-module.exports = { getClients, getClient, createClient, updateClient, deleteClient, recordClientPayment, getClientCredits, downloadCreditPDF, recalculateDebt, downloadPaymentReceipt };
+const getClientHistory = async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+    // Toutes les ventes du client
+    const sales = await Sale.find({ client: req.params.id })
+      .sort({ createdAt: 1 })
+      .populate('recordedBy', 'name');
+
+    // Tous les paiements du client
+    const payments = await ClientPayment.find({ client: req.params.id })
+      .sort({ createdAt: 1 })
+      .populate('paidBy', 'name');
+
+    // Fusionner et trier par date
+    const history = [
+      ...sales.map(s => ({
+        type:        'vente',
+        date:        s.createdAt,
+        reference:   s.saleNumber,
+        montant:     s.totalAmount,
+        paye:        s.amountPaid,
+        reste:       s.remainingAmount,
+        paymentType: s.paymentType,
+        status:      s.status,
+        recordedBy:  s.recordedBy?.name || '—',
+      })),
+      ...payments.map(p => ({
+        type:       'paiement',
+        date:       p.createdAt,
+        reference:  `PAY-${p._id.toString().slice(-6).toUpperCase()}`,
+        montant:    p.amount,
+        reste:      p.remainingDebt,
+        paidBy:     p.paidBy?.name || '—',
+      }))
+    ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    res.json({ client, history });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const downloadClientRelevePDF = async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+    const sales = await Sale.find({ client: req.params.id }).sort({ createdAt: 1 });
+    const payments = await ClientPayment.find({ client: req.params.id }).sort({ createdAt: 1 });
+
+    const history = [
+      ...sales.map(s => ({
+        type:      'vente',
+        date:      s.createdAt,
+        reference: s.saleNumber,
+        montant:   s.totalAmount,
+        paye:      s.amountPaid,
+        reste:     s.remainingAmount,
+        status:    s.status
+      })),
+      ...payments.map(p => ({
+        type:      'paiement',
+        date:      p.createdAt,
+        reference: `PAY-${p._id.toString().slice(-6).toUpperCase()}`,
+        montant:   p.amount,
+        reste:     p.remainingDebt
+      }))
+    ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const { generateClientHistoryPDF } = require('../utils/generateInvoicePDF');
+    await generateClientHistoryPDF(client, history, res);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = {
+  getClients, getClient, createClient, updateClient, deleteClient,
+  recordClientPayment, getClientCredits, downloadCreditPDF,
+  recalculateDebt, downloadPaymentReceipt, getClientHistory, downloadClientRelevePDF,
+};

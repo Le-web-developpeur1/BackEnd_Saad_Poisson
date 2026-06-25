@@ -646,6 +646,179 @@ doc.fontSize(7.5).fillColor('#CCCCCC')
   }
 };
 
+//L'historique complet d'un client
+const generateClientHistoryPDF = async (client, history, res) => {
+  let config = await SystemConfig.findOne();
+  if (!config) config = await SystemConfig.create({});
+
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=Historique-${client.name}.pdf`);
+  doc.pipe(res);
+
+  try {
+    const NAVY  = '#1A2B5F';
+    const GOLD  = '#D4A017';
+    const LIGHT = '#EBF5FB';
+    const W     = 595;
+
+    // ── EN-TÊTE ───────────────────────────────────────
+    doc.rect(0, 0, W, 100).fill(NAVY);
+
+    if (config.logo) {
+      try {
+        if (config.logo.startsWith('data:')) {
+          const buffer = Buffer.from(config.logo.split(',')[1], 'base64');
+          doc.image(buffer, 20, 12, { width: 70, height: 70 });
+        }
+      } catch (e) {}
+    }
+
+    doc.fontSize(18).font('Helvetica-Bold').fillColor('#FFFFFF')
+      .text(config.establishmentName || 'S.A.D POISSON', 105, 20);
+    doc.fontSize(9).fillColor(GOLD)
+      .text(config.establishmentSubtitle || '', 105, 44);
+    doc.fontSize(8).fillColor('#CCCCCC')
+      .text(`${config.address || ''} | Tél: ${config.phone1 || ''}`, 105, 60);
+    doc.fontSize(8).fillColor('#CCCCCC')
+      .text(`Édité le : ${new Date().toLocaleDateString('fr-FR')}`, 400, 40, { align: 'right', width: 165 });
+
+    // ── TITRE ─────────────────────────────────────────
+    doc.rect(0, 100, W, 36).fill('#F8FAFC');
+    doc.fontSize(15).font('Helvetica-Bold').fillColor(NAVY)
+      .text('RELEVÉ HISTORIQUE CLIENT', 30, 112);
+    doc.moveTo(30, 136).lineTo(W - 30, 136).lineWidth(1.5).stroke(GOLD);
+
+    // ── INFOS CLIENT ──────────────────────────────────
+    let y = 152;
+    doc.roundedRect(30, y, 535, 70, 6).lineWidth(1).stroke(NAVY);
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('INFORMATIONS CLIENT', 42, y + 10);
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Nom : ${client.name}`,           42,  y + 26)
+      .text(`Téléphone : ${client.phone || '—'}`, 42, y + 40)
+      .text(`Adresse : ${client.address || '—'}`, 42, y + 54);
+
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Dette actuelle : `, 320, y + 26)
+      .font('Helvetica-Bold').fillColor(client.currentDebt > 0 ? '#e53e3e' : '#16a34a')
+      .text(`${formatAmount(client.currentDebt)} GNF`, 320, y + 26, { align: 'right', width: 229 });
+
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Plafond crédit : `, 320, y + 40)
+      .font('Helvetica-Bold').fillColor(NAVY)
+      .text(`${formatAmount(client.creditLimit)} GNF`, 320, y + 40, { align: 'right', width: 229 });
+
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Statut : `, 320, y + 54)
+      .font('Helvetica-Bold').fillColor(client.isBlocked ? '#e53e3e' : '#16a34a')
+      .text(client.isBlocked ? 'BLOQUÉ' : 'ACTIF', 320, y + 54, { align: 'right', width: 229 });
+
+    // ── TABLEAU HISTORIQUE ────────────────────────────
+    y += 90;
+    const colX = { date: 30, type: 110, ref: 190, montant: 300, paye: 385, reste: 465 };
+
+    doc.rect(30, y, 535, 24).fill(NAVY);
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF');
+    doc.text('Date',       colX.date + 4,    y + 8);
+    doc.text('Type',       colX.type + 4,    y + 8);
+    doc.text('Référence',  colX.ref + 4,     y + 8);
+    doc.text('Montant',    colX.montant + 4, y + 8);
+    doc.text('Payé',       colX.paye + 4,    y + 8);
+    doc.text('Reste',      colX.reste + 4,   y + 8);
+
+    y += 24;
+    const rowH = 22;
+
+    history.forEach((item, i) => {
+      // Nouvelle page si nécessaire
+      if (y + rowH > 780) {
+        doc.addPage();
+        y = 30;
+        // Ré-afficher l'en-tête du tableau
+        doc.rect(30, y, 535, 24).fill(NAVY);
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF');
+        doc.text('Date',      colX.date + 4,    y + 8);
+        doc.text('Type',      colX.type + 4,    y + 8);
+        doc.text('Référence', colX.ref + 4,     y + 8);
+        doc.text('Montant',   colX.montant + 4, y + 8);
+        doc.text('Payé',      colX.paye + 4,    y + 8);
+        doc.text('Reste',     colX.reste + 4,   y + 8);
+        y += 24;
+      }
+
+      const bg = i % 2 === 0 ? '#FFFFFF' : LIGHT;
+      doc.rect(30, y, 535, rowH).fill(bg);
+      doc.fontSize(8).font('Helvetica').fillColor('#222');
+
+      // Date
+      doc.text(
+        new Date(item.date).toLocaleDateString('fr-FR'),
+        colX.date + 4, y + 7
+      );
+
+      // Type avec couleur
+      doc.font('Helvetica-Bold')
+        .fillColor(item.type === 'vente' ? '#1A2B5F' : '#16a34a')
+        .text(item.type === 'vente' ? 'VENTE' : 'PAIEMENT', colX.type + 4, y + 7);
+
+      // Référence
+      doc.font('Helvetica').fillColor('#555')
+        .text(item.reference || '—', colX.ref + 4, y + 7);
+
+      // Montant
+      doc.fillColor('#222')
+        .text(`${formatAmount(item.montant)} GNF`, colX.montant + 4, y + 7);
+
+      // Payé
+      if (item.type === 'vente') {
+        doc.fillColor('#16a34a')
+          .text(`${formatAmount(item.paye || 0)} GNF`, colX.paye + 4, y + 7);
+      } else {
+        doc.fillColor('#16a34a').font('Helvetica-Bold')
+          .text(`${formatAmount(item.montant)} GNF`, colX.paye + 4, y + 7);
+      }
+
+      // Reste
+      const reste = item.reste || 0;
+      doc.font('Helvetica-Bold')
+        .fillColor(reste > 0 ? '#e53e3e' : '#16a34a')
+        .text(`${formatAmount(reste)} GNF`, colX.reste + 4, y + 7);
+
+      y += rowH;
+    });
+
+    // Bordure du tableau
+    doc.rect(30, 242, 535, y - 242).lineWidth(0.8).stroke(NAVY);
+
+    // ── RÉSUMÉ FINAL ──────────────────────────────────
+    y += 16;
+    const totalVentes   = history.filter(h => h.type === 'vente').reduce((sum, h) => sum + h.montant, 0);
+    const totalPaiements = history.filter(h => h.type === 'paiement').reduce((sum, h) => sum + h.montant, 0);
+
+    doc.rect(30, y, 535, 60).fill('#F8FAFC');
+    doc.rect(30, y, 535, 60).lineWidth(0.8).stroke(NAVY);
+
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY)
+      .text('RÉSUMÉ', 42, y + 10);
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Total achats :`, 42, y + 26)
+      .text(`${formatAmount(totalVentes)} GNF`, 42, y + 26, { align: 'right', width: 493 });
+    doc.text(`Total paiements reçus :`, 42, y + 42)
+      .text(`${formatAmount(totalPaiements)} GNF`, 42, y + 42, { align: 'right', width: 493 });
+
+    // ── PIED DE PAGE ──────────────────────────────────
+    doc.rect(0, 800, W, 42).fill(NAVY);
+    doc.fontSize(9).font('Helvetica-BoldOblique').fillColor(GOLD)
+      .text(config.invoiceFooter || 'Merci pour votre confiance !', 0, 816, { align: 'center', width: W });
+
+    doc.end();
+  } catch (err) {
+    console.error('Erreur historique PDF:', err);
+    if (!res.headersSent) res.status(500).json({ message: 'Erreur génération PDF' });
+    try { doc.end(); } catch (e) {}
+  }
+};
+
 // ── EXPORTS ───────────────────────────────────────────
-module.exports = { generateInvoicePDF, generateCreditPDF, generateSalarySlipPDF, generateClientPaymentReceiptPDF };
+module.exports = { generateInvoicePDF, generateCreditPDF, generateSalarySlipPDF, generateClientPaymentReceiptPDF, generateClientHistoryPDF };
 
