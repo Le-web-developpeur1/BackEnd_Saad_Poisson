@@ -321,9 +321,10 @@ const getCaisseReport = async (req, res) => {
 
     const totalEncaisse = totalComptant + totalAcomptesInitiaux + totalClientPayments;
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const totalCredit   = sales
-      .filter(s => s.paymentType === 'credit')
-      .reduce((sum, s) => sum + s.remainingAmount, 0);
+    
+    // ✅ Correct — lit currentDebt sur les clients comme le module Capital
+    const clientsWithDebt = await Client.find({ isActive: true, currentDebt: { $gt: 0 } });
+    const totalCredit = clientsWithDebt.reduce((sum, c) => sum + c.currentDebt, 0);
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
     const soldeCaisse   = totalEncaisse - totalDepenses;
 
