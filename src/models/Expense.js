@@ -8,8 +8,8 @@ const expenseSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['transport', 'loyer', 'salaire', 'fourniture', 'entretien', 'autre'],
-    default: 'autre'
+    enum: ['transport', 'loyer', 'salaire', 'fourniture', 'entretien', 'autre', 'achat_fournisseur', 'virement_fournisseur', 'transfert_banque', 'transfert_caisse'],
+    required: true
   },
   amount: {
     type: Number,

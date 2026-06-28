@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const {
   getSuppliers, getSupplier, createSupplier,
-  updateSupplier, deleteSupplier, recordSupplierPayment, recordPurchase
+  updateSupplier, deleteSupplier, recordSupplierPayment, 
+  recordPurchase, getSupplierHistory
 } = require('../controllers/supplierController');
 const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
@@ -19,5 +20,6 @@ router.route('/:id')
 
 router.post('/:id/payment', recordSupplierPayment);
 router.post('/:id/purchase', recordPurchase);
+router.get('/:id/history', getSupplierHistory);
 
 module.exports = router;

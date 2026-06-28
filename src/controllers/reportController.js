@@ -74,7 +74,18 @@ const getStockReport = async (req, res) => {
     const products = await Product.find({ isActive: true });
     const lowStock = products.filter(p => p.stockCartons <= p.alertThreshold);
     const movements = await StockMovement.find().sort({ createdAt: -1 }).limit(50).populate('product', 'name');
-    res.json({ products, lowStock, movements });
+
+    //Valeur totale du stock au prix de vente
+    const valeurStockVente = products.reduce((sum, p) => 
+      sum + (p.stockCartons * p.pricePerCarton), 0
+    );
+
+    //Valeur totale du stock au prix d'achat
+    const valeurStockAchat = products.reduce((sum, p) => 
+      sum + (p.stockCartons * (p.purchasePricePerCarton || 0)), 0
+    );
+
+    res.json({ products, lowStock, movements, valeurStockAchat, valeurStockVente });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -194,23 +205,26 @@ const exportStockReport = async (req, res) => {
     const config     = await SystemConfig.findOne();
 
     const title   = 'Rapport des Stocks';
-    const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Stock Kg', 'Prix/Carton', 'Prix/Kg', 'Statut'];
+    const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Prix/Carton (achat)', 'Valeur stock (achat)', 'Statut'];
     const rows    = products.map(p => [
       p.name,
       p.category || '—',
-      p.stockCartons,
-      `${p.stockKg} kg`,
-      `${formatAmount(p.pricePerCarton)} GNF`,
-      `${formatAmount(p.pricePerKg)} GNF`,
+      String(p.stockCartons),
+      `${formatAmount(p.purchasePricePerCarton || 0)} GNF`,
+      `${formatAmount(p.stockCartons * (p.purchasePricePerCarton || 0))} GNF`,
       p.stockCartons <= p.alertThreshold ? 'Stock bas' : 'OK'
     ]);
 
-    const totalCartons = products.reduce((sum, p) => sum + p.stockCartons, 0);
-    const totalKg      = products.reduce((sum, p) => sum + p.stockKg, 0);
+    // Totaux
+    const valeurStockAchat  = products.reduce((sum, p) => sum + (p.stockCartons * (p.purchasePricePerCarton || 0)), 0);
+    const totalCartons       = products.reduce((sum, p) => sum + p.stockCartons, 0);
+    const produitsStockBas   = products.filter(p => p.stockCartons <= p.alertThreshold).length;
+
     const totals = [
-      { label: 'Total produits',         value: String(products.length), highlight: false },
-      { label: 'Total cartons en stock', value: String(totalCartons),    highlight: false },
-      { label: 'Total kg en stock',      value: `${totalKg} kg`,         highlight: true  },
+      { label: 'Total produits actifs',          value: String(products.length),                    highlight: false },
+      { label: 'Total cartons en stock',          value: String(totalCartons),                       highlight: false },
+      { label: 'Produits en stock bas',           value: String(produitsStockBas),                   highlight: false },
+      { label: 'Valeur totale stock (prix achat)', value: `${formatAmount(valeurStockAchat)} GNF`,   highlight: true  },
     ];
 
     if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-stocks', totals, config);
@@ -321,28 +335,48 @@ const getCaisseReport = async (req, res) => {
 
     const totalEncaisse = totalComptant + totalAcomptesInitiaux + totalClientPayments;
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-    
-    // ✅ Correct — lit currentDebt sur les clients comme le module Capital
+
     const clientsWithDebt = await Client.find({ isActive: true, currentDebt: { $gt: 0 } });
-    const totalCredit = clientsWithDebt.reduce((sum, c) => sum + c.currentDebt, 0);
+    const totalCredit     = clientsWithDebt.reduce((sum, c) => sum + c.currentDebt, 0);
+
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const soldeCaisse   = totalEncaisse - totalDepenses;
+
+    // Dépenses caisse = tout sauf virement_fournisseur ET transfert_banque
+    // (transfert_banque sort de la caisse mais va à la banque)
+    const depensesComptant = expenses
+      .filter(e => !['virement_fournisseur', 'transfert_caisse'].includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Transferts banque → caisse = entrées caisse
+    const transfertsBanqueVersCaisse = expenses
+      .filter(e => e.category === 'transfert_caisse')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const depensesVirement = expenses
+      .filter(e => e.category === 'virement_fournisseur')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const soldeCaisse = totalEncaisse + transfertsBanqueVersCaisse - depensesComptant;
 
     // ── Aujourd'hui ───────────────────────────────────
-    const today      = new Date();
     const startToday = new Date(new Date().setHours(0, 0, 0, 0));
     const endToday   = new Date(new Date().setHours(23, 59, 59, 999));
 
-    const salesToday         = await Sale.find({ createdAt: { $gte: startToday, $lte: endToday } });
-    const clientPayToday     = await ClientPayment.find({ createdAt: { $gte: startToday, $lte: endToday } });
-    const expensesToday      = await Expense.find({ date: { $gte: startToday, $lte: endToday } });
+    const salesToday          = await Sale.find({ createdAt: { $gte: startToday, $lte: endToday } });
+    const clientPayToday      = await ClientPayment.find({ createdAt: { $gte: startToday, $lte: endToday } });
+    const expensesToday       = await Expense.find({ date: { $gte: startToday, $lte: endToday } });
 
-    const comptantToday      = salesToday.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
-    const creditPaidToday    = salesToday.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
+    const comptantToday       = salesToday.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
+    const creditPaidToday     = salesToday.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
     const clientPayTodayTotal = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
-    const acomptesToday      = Math.max(0, creditPaidToday - clientPayTodayTotal);
-    const encaisseAujourdhui = comptantToday + acomptesToday + clientPayTodayTotal;
-    const depensesAujourdhui = expensesToday.reduce((sum, e) => sum + e.amount, 0);
+    const acomptesToday       = Math.max(0, creditPaidToday - clientPayTodayTotal);
+    const transfertsBanqueCaisseToday = expensesToday
+      .filter(e => e.category === 'transfert_caisse')
+      .reduce((sum, e) => sum + e.amount, 0);
+    const encaisseAujourdhui  = comptantToday + acomptesToday + clientPayTodayTotal + transfertsBanqueCaisseToday;
+    const depensesAujourdhui  = expensesToday
+      .filter(e => !['virement_fournisseur', 'transfert_caisse'].includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
 
     // ── Ce mois ───────────────────────────────────────
     const now        = new Date();
@@ -357,8 +391,13 @@ const getCaisseReport = async (req, res) => {
     const creditPaidMonth     = salesMonth.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
     const clientPayMonthTotal = clientPayMonth.reduce((sum, p) => sum + p.amount, 0);
     const acomptesMonth       = Math.max(0, creditPaidMonth - clientPayMonthTotal);
-    const encaisseMois        = comptantMonth + acomptesMonth + clientPayMonthTotal;
-    const depensesMois        = expensesMonth.reduce((sum, e) => sum + e.amount, 0);
+    const transfertsBanqueCaisseMois = expensesMonth
+      .filter(e => e.category === 'transfert_caisse')
+      .reduce((sum, e) => sum + e.amount, 0);
+    const encaisseMois        = comptantMonth + acomptesMonth + clientPayMonthTotal + transfertsBanqueCaisseMois;
+    const depensesMois        = expensesMonth
+      .filter(e => !['virement_fournisseur', 'transfert_caisse'].includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
     const soldeMois           = encaisseMois - depensesMois;
 
     res.json({
@@ -368,19 +407,18 @@ const getCaisseReport = async (req, res) => {
       totalVirement,
       totalCredit,
       totalDepenses,
+      depensesComptant,
+      depensesVirement,
       soldeCaisse,
       nbTransactions: sales.length,
-
       encaisseAujourdhui,
       depensesAujourdhui,
       soldeAujourdhui: encaisseAujourdhui - depensesAujourdhui,
       nbTransactionsAujourdhui: salesToday.length,
-
       encaisseMois,
       depensesMois,
       soldeMois,
       nbTransactionsMois: salesMonth.length,
-
       sales,
       expenses
     });
@@ -399,87 +437,108 @@ const getCapitalReport = async (req, res) => {
     const clientPayments = await ClientPayment.find();
 
     // ── 1. CAPITAL INITIAL ─────────────────────────
-    // Somme de (stockInitialCartons × purchasePricePerCarton)
     const capitalInitial = products.reduce((sum, p) =>
       sum + ((p.stockInitialCartons || 0) * (p.purchasePricePerCarton || 0)), 0
     );
 
     // ── 2. CHIFFRE D'AFFAIRES ESTIMÉ ───────────────
-    // Somme de (stockCartons actuels × pricePerCarton)
     const chiffreAffairesEstime = products.reduce((sum, p) =>
       sum + ((p.stockInitialCartons || 0) * p.pricePerCarton), 0
     );
-    
+
     // ── 7. AVARIES ────────────────────────────────
     const avaries = damages.reduce((sum, d) => sum + d.estimatedLoss, 0);
 
-    // ── 3. STOCK FINAL ────────────────────────────────
-      // Capital initial - valeur des ventes au prix d'achat - avaries
-      const valeurVentesAchat = sales.reduce((sum, s) => {
-        return sum + s.items.reduce((iSum, item) => {
-          const product = products.find(p => p._id.toString() === item.product.toString());
-          if (!product) return iSum;
-          const prixAchat  = product.purchasePricePerCarton || 0;
-          const qtyCartons = item.unit === 'carton'
-            ? item.quantity
-            : item.quantity / (product.kgPerCarton || 1);
-          return iSum + (qtyCartons * prixAchat);
-        }, 0);
+    // ── 3. STOCK FINAL ────────────────────────────
+    const valeurVentesAchat = sales.reduce((sum, s) => {
+      return sum + s.items.reduce((iSum, item) => {
+        const product = products.find(p => p._id.toString() === item.product.toString());
+        if (!product) return iSum;
+        const prixAchat  = product.purchasePricePerCarton || 0;
+        const qtyCartons = item.unit === 'carton'
+          ? item.quantity
+          : item.quantity / (product.kgPerCarton || 1);
+        return iSum + (qtyCartons * prixAchat);
       }, 0);
+    }, 0);
 
-      const stockFinal = Math.max(0, capitalInitial - valeurVentesAchat - avaries);
+    const stockFinal = Math.max(0, capitalInitial - valeurVentesAchat - avaries);
 
     // ── 4. CAISSE ─────────────────────────────────
     const totalVentesComptant = sales
       .filter(s => s.paymentType === 'comptant')
       .reduce((sum, s) => sum + s.amountPaid, 0);
 
-    
     const totalClientPayments = clientPayments.reduce((sum, p) => sum + p.amount, 0);
 
     const totalAcomptesPaidCredit = sales
       .filter(s => s.paymentType === 'credit')
       .reduce((sum, s) => sum + s.amountPaid, 0);
-    
+
     const totalAcomptesInitiaux = Math.max(0, totalAcomptesPaidCredit - totalClientPayments);
 
-    const totalDepenses       = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const caisse              = totalVentesComptant + totalAcomptesInitiaux + totalClientPayments - totalDepenses;
+    // Transferts banque → caisse (augmentent la caisse)
+    const transfertsBanqueVersCaisse = expenses
+      .filter(e => e.category === 'transfert_caisse')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Dépenses caisse = tout sauf virement_fournisseur et transfert_caisse
+    const depensesComptant = expenses
+      .filter(e => !['virement_fournisseur', 'transfert_caisse'].includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    const caisse = totalVentesComptant + totalAcomptesInitiaux + totalClientPayments
+                   + transfertsBanqueVersCaisse - depensesComptant;
 
     // ── 5. BANQUE ──────────────────────────────────
+    // Ventes virement + transferts caisse→banque - paiements fournisseurs virement - transferts banque→caisse
+    const depensesVirement = expenses
+      .filter(e => e.category === 'virement_fournisseur')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const transfertsCaisseVersBanque = expenses
+      .filter(e => e.category === 'transfert_banque')
+      .reduce((sum, e) => sum + e.amount, 0);
+
     const banque = sales
       .filter(s => s.paymentType === 'virement')
-      .reduce((sum, s) => sum + s.amountPaid, 0);
+      .reduce((sum, s) => sum + s.amountPaid, 0)
+      + transfertsCaisseVersBanque
+      - depensesVirement
+      - transfertsBanqueVersCaisse;
 
     // ── 6. CRÉDITS ────────────────────────────────
     const credits = clients.reduce((sum, c) => sum + c.currentDebt, 0);
 
-    
-    // ── 8. CAPITAL DISPONIBLE ─────────────────────────
-    // Stock final + Caisse + Banque + Crédits 
+    // ── 8. CAPITAL DISPONIBLE ─────────────────────
     const capitalDisponible = stockFinal + caisse + banque + credits;
-        res.json({
-          capitalInitial,
-          chiffreAffairesEstime,
-          stockFinal,
-          caisse,
-          banque,
-          credits,
-          avaries,
-          totalDepenses,
-          capitalDisponible,
-          details: {
-            totalVentesComptant,
-            totalAcomptesInitiaux,
-            totalClientPayments,
-            valeurVentesAchat,
-            nbProduits:  products.length,
-            nbClients:   clients.filter(c => c.currentDebt > 0).length,
-          }
-        });
-      } catch (error) {
-        res.status(500).json({ message: error.message });
+
+    res.json({
+      capitalInitial,
+      chiffreAffairesEstime,
+      stockFinal,
+      caisse,
+      banque,
+      credits,
+      avaries,
+      totalDepenses,
+      depensesComptant,
+      depensesVirement,
+      capitalDisponible,
+      details: {
+        totalVentesComptant,
+        totalAcomptesInitiaux,
+        totalClientPayments,
+        valeurVentesAchat,
+        nbProduits: products.length,
+        nbClients:  clients.filter(c => c.currentDebt > 0).length,
       }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 module.exports = {
