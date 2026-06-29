@@ -1,3 +1,4 @@
+const Expense = require('../models/Expense');
 const Supplier = require('../models/Supplier');
 const SupplierPurchase = require('../models/SupplierPurchase');
 
@@ -49,21 +50,58 @@ const deleteSupplier = async (req, res) => {
 };
 
 const recordSupplierPayment = async (req, res) => {
-    try {
-      const { amount, note } = req.body;
-      const supplier = await Supplier.findById(req.params.id);
-      if (!supplier) return res.status(404).json({ message: 'Fournisseur introuvable' });
-  
-      supplier.totalPaid += amount;
-      supplier.balance = supplier.totalPurchases - supplier.totalPaid;
-      supplier.payments.push({ amount, note, recordedBy: req.user._id });
-      await supplier.save();
-  
-      res.json({ message: 'Versement enregistré', supplier });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+  try {
+    const { amount, note, modePaiement } = req.body; // ← modePaiement depuis req.body
+    const supplier = await Supplier.findById(req.params.id);
+    if (!supplier) return res.status(404).json({ message: 'Fournisseur introuvable' });
+
+    const paye = Number(amount);
+
+    if (paye <= 0) return res.status(400).json({ message: 'Montant invalide' });
+    if (paye > supplier.balance) return res.status(400).json({
+      message: `Le montant ne peut pas dépasser le solde dû (${supplier.balance} GNF)`
+    });
+    if (!modePaiement) return res.status(400).json({ message: 'Mode de paiement obligatoire' });
+
+    // Mettre à jour les achats impayés/partiels par ordre chronologique
+    const achatsRestants = await SupplierPurchase.find({
+      supplier: supplier._id,
+      statut:   { $in: ['impayé', 'partiel'] }
+    }).sort({ createdAt: 1 });
+
+    let resteAPayer = paye;
+    for (const achat of achatsRestants) {
+      if (resteAPayer <= 0) break;
+      const paiementPourCetAchat = Math.min(resteAPayer, achat.montantRestant);
+      achat.montantPaye    += paiementPourCetAchat;
+      achat.montantRestant -= paiementPourCetAchat;
+      achat.modePaiement    = modePaiement;
+      achat.statut = achat.montantRestant === 0 ? 'payé' : 'partiel';
+      await achat.save();
+      resteAPayer -= paiementPourCetAchat;
     }
-  };
+
+    // Créer la dépense
+    const categorieDepense = modePaiement === 'virement' ? 'virement_fournisseur' : 'achat_fournisseur';
+    await Expense.create({
+      title:      `Versement fournisseur — ${supplier.name}${note ? ' — ' + note : ''}`,
+      category:   categorieDepense,
+      amount:     paye,
+      date:       new Date(),
+      note:       note || '',
+      recordedBy: req.user._id
+    });
+
+    // Mettre à jour le solde fournisseur
+    supplier.totalPaid += paye;
+    supplier.balance   -= paye;
+    await supplier.save();
+
+    res.json({ message: 'Versement enregistré', supplier });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
   
   // const recordPurchase = async (req, res) => {
   //   try {
