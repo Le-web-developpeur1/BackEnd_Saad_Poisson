@@ -58,9 +58,11 @@ const getMonthlyReport = async (req, res) => {
 
     const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.totalAmount, 0);
+
 
     res.json({
-      month: m + 1, year: y, totalSales, totalExpenses,
+      month: m + 1, year: y, totalSales, totalExpenses, totalCredit,
       netProfit: totalSales - totalExpenses,
       salesCount: sales.length, expensesCount: expenses.length
     });
@@ -125,7 +127,9 @@ const exportDailyReport = async (req, res) => {
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const benefice      = totalEncaisse - totalDepenses;
+    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+
+    const benefice = totalEncaisse - totalDepenses;
 
     const title   = `Rapport Journalier — ${start.toLocaleDateString('fr-FR')}`;
     const headers = ['N° Vente', 'Client', 'Montant', 'Type', 'Statut', 'Date'];
@@ -141,8 +145,9 @@ const exportDailyReport = async (req, res) => {
     const totals = [
       { label: 'Total ventes',   value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
       { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
+      { label: 'Crédits en cours', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
       { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
-      { label: 'Bénéfice net',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
+      { label: 'Total disponible',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
     ];
 
     const fname = `rapport-journalier-${start.toISOString().split('T')[0]}`;
@@ -169,6 +174,7 @@ const exportMonthlyReport = async (req, res) => {
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalCredit   = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
     const benefice      = totalEncaisse - totalDepenses;
 
     const title   = `Rapport Mensuel — ${m + 1}/${y}`;
@@ -185,8 +191,9 @@ const exportMonthlyReport = async (req, res) => {
     const totals = [
       { label: 'Total ventes',   value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
       { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
+      { label: 'Crédit en cours', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
       { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
-      { label: 'Bénéfice net',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
+      { label: 'Total disponible',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
     ];
 
     const fname = `rapport-mensuel-${m + 1}-${y}`;
