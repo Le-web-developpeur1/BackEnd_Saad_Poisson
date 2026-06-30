@@ -16,10 +16,6 @@ const stockMovementSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  quantityKg: {
-    type: Number,
-    default: 0
-  },
   reason: {
     type: String,
     enum: ['achat', 'vente', 'retour', 'perte', 'ajustement'],

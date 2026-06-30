@@ -18,7 +18,7 @@ const getDamages = async (req, res) => {
 // @desc    Déclarer une avarie
 const createDamage = async (req, res) => {
   try {
-    const { product: productId, reason, quantityCartons = 0, quantityKg = 0, note } = req.body;
+    const { product: productId, reason, quantityCartons = 0, note } = req.body;
 
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ message: 'Produit introuvable' });
@@ -27,18 +27,12 @@ const createDamage = async (req, res) => {
     if (quantityCartons > product.stockCartons) {
       return res.status(400).json({ message: `Stock insuffisant : ${product.stockCartons} cartons disponibles` });
     }
-    if (quantityKg > product.stockKg) {
-      return res.status(400).json({ message: `Stock insuffisant : ${product.stockKg} kg disponibles` });
-    }
 
     // Calcul de la perte estimée
-    const estimatedLoss =
-      (quantityCartons * product.pricePerCarton) +
-      (quantityKg * product.pricePerKg);
+    const estimatedLoss = quantityCartons * product.pricePerCarton;
 
     // Déduction du stock
     product.stockCartons -= quantityCartons;
-    product.stockKg -= quantityKg;
     await product.save();
 
     // Mouvement de stock
@@ -47,7 +41,6 @@ const createDamage = async (req, res) => {
       productName: product.name,
       type: 'sortie',
       quantityCartons,
-      quantityKg,
       reason: 'perte',
       reference: `AVARIE-${reason}`,
       recordedBy: req.user._id
@@ -59,7 +52,6 @@ const createDamage = async (req, res) => {
       productName: product.name,
       reason,
       quantityCartons,
-      quantityKg,
       estimatedLoss,
       note,
       declaredBy: req.user._id

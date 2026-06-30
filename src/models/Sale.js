@@ -12,11 +12,6 @@ const saleItemSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
-  unit: {
-    type: String,
-    enum: ['carton', 'kg'],
-    required: true
-  },
   unitPrice: {
     type: Number,
     required: true,

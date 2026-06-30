@@ -28,10 +28,6 @@ const createProduct = async (req, res) => {
   try {
     const data = { ...req.body };
     data.stockInitialCartons = data.stockCartons || 0;
-
-    if (data.stockCartons && data.kgPerCarton) {
-      data.stockKg = data.stockCartons * data.kgPerCarton;
-    }
     const product = await Product.create(data);
     res.status(201).json(product);
   } catch (error) {
@@ -64,30 +60,29 @@ const deleteProduct = async (req, res) => {
 // @desc    Ajuster le stock manuellement
 const adjustStock = async (req, res) => {
   try {
-    const { quantityCartons, quantityKg, reason, type } = req.body;
+    const { quantityCartons, reason, type } = req.body;
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Produit introuvable' });
 
+    const qCartons = Number(quantityCartons || 0);
+
     if (type === 'entrée') {
-      product.stockCartons += quantityCartons || 0;
-      product.stockKg += quantityKg || 0;
-      product.stockInitialCartons += quantityCartons || 0;
+      product.stockCartons        += qCartons;
+      product.stockInitialCartons += qCartons;
     } else if (type === 'sortie') {
-      product.stockCartons -= quantityCartons || 0;
-      product.stockKg -= quantityKg || 0;
+      product.stockCartons = Math.max(0, product.stockCartons - qCartons);
     } else {
-      product.stockCartons = quantityCartons || product.stockCartons;
-      product.stockKg = quantityKg || product.stockKg;
-      product.stockInitialCartons = product.stockCartons;
+      product.stockCartons        = qCartons;
+      product.stockInitialCartons = qCartons;
     }
 
     await product.save();
 
     if (product.stockCartons <= product.alertThreshold) {
-      await notifyUsers (
+      await notifyUsers(
         'lowStock',
         'Alerte stock bas',
-        `Le produit "${product.name}" est en sctock bas : ${product.stockCartons} cartons restants`,
+        `Le produit "${product.name}" est en stock bas : ${product.stockCartons} cartons restants`,
         '/products'
       );
     }
@@ -96,8 +91,7 @@ const adjustStock = async (req, res) => {
       product: product._id,
       productName: product.name,
       type,
-      quantityCartons: quantityCartons || 0,
-      quantityKg: quantityKg || 0,
+      quantityCartons: qCartons,
       reason,
       recordedBy: req.user._id
     });

@@ -13,7 +13,6 @@ const damageSchema = new mongoose.Schema({
     required: true
   },
   quantityCartons: { type: Number, default: 0 },
-  quantityKg:      { type: Number, default: 0 },
   estimatedLoss:   { type: Number, default: 0 },
   note:            { type: String, trim: true },
   declaredBy: {

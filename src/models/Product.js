@@ -8,7 +8,7 @@ const productSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    trim: true
+    default: ''
   },
   stockInitialCartons: {
     type: Number,
@@ -20,24 +20,9 @@ const productSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  stockKg: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  kgPerCarton: {
-    type: Number,
-    required: [true, 'Le poids par carton est obligatoire'],
-    min: 0
-  },
   pricePerCarton: {
     type: Number,
     required: [true, 'Le prix par carton est obligatoire'],
-    min: 0
-  },
-  pricePerKg: {
-    type: Number,
-    required: [true, 'Le prix par kg est obligatoire'],
     min: 0
   },
   purchasePricePerCarton: {

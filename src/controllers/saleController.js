@@ -47,27 +47,23 @@ const createSale = async (req, res) => {
       const client = await Client.findById(clientId);
       if (!client) return res.status(404).json({ message: 'Client introuvable' });
 
-      // Calcul préalable du montant de crédit de cette vente
       let montantVente = 0;
       for (const item of items) {
         const product = await Product.findById(item.product);
         if (product) {
-          const unitPrice = item.unit === 'carton' ? product.pricePerCarton : product.pricePerKg;
-          montantVente += unitPrice * item.quantity;
+          montantVente += product.pricePerCarton * item.quantity;
         }
       }
       const montantCredit  = montantVente - Number(discount || 0);
       const amountPaidNow  = Number(amountPaid || 0);
       const nouveauCredit  = montantCredit - amountPaidNow;
 
-      // Refuser si ça dépasse le plafond
       if (client.creditLimit > 0 && (client.currentDebt + nouveauCredit) > client.creditLimit) {
         return res.status(403).json({
           message: `Vente refusée — Cette vente porterait la dette de ${client.name} à ${client.currentDebt + nouveauCredit} GNF, ce qui dépasse le plafond de ${client.creditLimit} GNF. Dette actuelle : ${client.currentDebt} GNF.`
         });
       }
 
-      // Bloquer si déjà bloqué
       if (client.isBlocked) {
         return res.status(403).json({
           message: `Client bloqué — plafond de crédit atteint (${client.creditLimit} GNF)`
@@ -83,14 +79,11 @@ const createSale = async (req, res) => {
       const product = await Product.findById(item.product);
       if (!product) return res.status(404).json({ message: 'Produit introuvable' });
 
-      if (item.unit === 'carton' && product.stockCartons < item.quantity) {
+      if (product.stockCartons < item.quantity) {
         return res.status(400).json({ message: `Stock insuffisant pour ${product.name} (${product.stockCartons} cartons disponibles)` });
       }
-      if (item.unit === 'kg' && product.stockKg < item.quantity) {
-        return res.status(400).json({ message: `Stock insuffisant pour ${product.name} (${product.stockKg} kg disponibles)` });
-      }
 
-      const unitPrice = item.unit === 'carton' ? product.pricePerCarton : product.pricePerKg;
+      const unitPrice = product.pricePerCarton;
       const total = unitPrice * item.quantity;
       subTotal += total;
 
@@ -98,24 +91,12 @@ const createSale = async (req, res) => {
         product: product._id,
         productName: product.name,
         quantity: item.quantity,
-        unit: item.unit,
         unitPrice,
         total
       });
 
       // Déduction du stock
-      if (item.unit === 'carton') {
-        product.stockCartons -= item.quantity;
-        product.stockKg -= item.quantity * product.kgPerCarton;
-      } else {
-        product.stockKg -= item.quantity;
-        if (product.kgPerCarton > 0) {
-          product.stockCartons = Math.floor(product.stockKg / product.kgPerCarton);
-        }
-      }
-
-      product.stockCartons = Math.max(0, product.stockCartons);
-      product.stockKg = Math.max(0, product.stockKg);
+      product.stockCartons = Math.max(0, product.stockCartons - item.quantity);
       await product.save();
 
       // Mouvement de stock
@@ -123,8 +104,7 @@ const createSale = async (req, res) => {
         product: product._id,
         productName: product.name,
         type: 'sortie',
-        quantityCartons: item.unit === 'carton' ? item.quantity : 0,
-        quantityKg: item.unit === 'kg' ? item.quantity : 0,
+        quantityCartons: item.quantity,
         reason: 'vente',
         recordedBy: req.user._id
       });
@@ -137,7 +117,6 @@ const createSale = async (req, res) => {
     if (paid === 0) status = 'crédit';
     else if (paid < totalAmount) status = 'partiel';
 
-    // Génération du numéro de vente
     const count = await Sale.countDocuments();
     const date = new Date();
     const year = date.getFullYear();
@@ -159,7 +138,6 @@ const createSale = async (req, res) => {
       recordedBy: req.user._id
     });
 
-    // Mise à jour de la dette du client
     if (clientId && paymentType === 'credit') {
       const client = await Client.findById(clientId);
       client.currentDebt += totalAmount - paid;
@@ -185,7 +163,7 @@ const createSale = async (req, res) => {
       items: processedItems.map(item => ({
         designation: item.productName,
         quantity: item.quantity,
-        unit: item.unit === 'carton' ? 'Carton' : 'Kg',
+        unit: 'Carton',
         unitPrice: item.unitPrice,
         total: item.total
       })),
@@ -216,12 +194,13 @@ const createSale = async (req, res) => {
         );
       }
     }
-    
-    res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });  
+
+    res.status(201).json({ sale, invoiceId: createdInvoice._id, invoiceNumber: createdInvoice.invoiceNumber });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 // @desc    Modifier une vente
 const updateSale = async (req, res) => {
   try {
@@ -229,7 +208,6 @@ const updateSale = async (req, res) => {
     const sale = await Sale.findById(req.params.id);
     if (!sale) return res.status(404).json({ message: 'Vente introuvable' });
 
-    // Mettre à jour les champs modifiables
     if (discount !== undefined) sale.discount = discount;
     if (amountPaid !== undefined) {
       sale.amountPaid = amountPaid;
@@ -241,7 +219,6 @@ const updateSale = async (req, res) => {
     if (paymentType !== undefined) sale.paymentType = paymentType;
     if (status !== undefined) sale.status = status;
 
-    // Mettre à jour la facture associée
     await Invoice.findOneAndUpdate(
       { sale: sale._id },
       {
@@ -252,11 +229,9 @@ const updateSale = async (req, res) => {
       }
     );
 
-    // Mettre à jour la dette client si crédit
     if (sale.client) {
       const client = await Client.findById(sale.client);
       if (client) {
-        // Recalculer la dette totale du client
         const allSales = await Sale.find({
           client: sale.client,
           paymentType: 'credit'
@@ -285,25 +260,17 @@ const deleteSale = async (req, res) => {
     const sale = await Sale.findById(req.params.id);
     if (!sale) return res.status(404).json({ message: 'Vente introuvable' });
 
-    // Remettre le stock
     for (const item of sale.items) {
       const product = await Product.findById(item.product);
       if (product) {
-        if (item.unit === 'carton') {
-          product.stockCartons += item.quantity;
-          product.stockKg += item.quantity * product.kgPerCarton;
-        } else {
-          product.stockKg += item.quantity;
-        }
+        product.stockCartons += item.quantity;
         await product.save();
 
-        // Mouvement de stock (retour)
         await StockMovement.create({
           product: product._id,
           productName: product.name,
           type: 'entrée',
-          quantityCartons: item.unit === 'carton' ? item.quantity : 0,
-          quantityKg: item.unit === 'kg' ? item.quantity : 0,
+          quantityCartons: item.quantity,
           reason: 'retour',
           reference: `ANNULATION-${sale.saleNumber}`,
           recordedBy: req.user._id
@@ -311,7 +278,6 @@ const deleteSale = async (req, res) => {
       }
     }
 
-    // Mettre à jour la dette client
     if (sale.client && sale.paymentType === 'credit') {
       const client = await Client.findById(sale.client);
       if (client) {
@@ -321,10 +287,7 @@ const deleteSale = async (req, res) => {
       }
     }
 
-    // Supprimer la facture associée
     await Invoice.findOneAndDelete({ sale: sale._id });
-
-    // Supprimer la vente
     await Sale.findByIdAndDelete(req.params.id);
 
     res.json({ message: 'Vente supprimée et stock restauré' });
