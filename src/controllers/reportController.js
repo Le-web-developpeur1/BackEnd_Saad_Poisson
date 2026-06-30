@@ -9,6 +9,7 @@ const Damage = require('../models/Damage');
 const ClientPayment = require('../models/ClientPayment');
 const { exportPDF, exportWord, exportCSV } = require('../utils/exportReport');
 const SupplierExpense = require('../models/SupplierExpense');
+const BankTransfer = require('../models/BankTransfer');
 
 const formatAmount = (amount) => {
   if (amount === undefined || amount === null || isNaN(amount)) return '0';
@@ -342,9 +343,11 @@ const getCaisseReport = async (req, res) => {
     const supplierExpenses = await SupplierExpense.find(
       startDate && endDate ? { date: { $gte: new Date(startDate), $lte: new Date(endDate) } } : {}
     );
+    const transferts = await BankTransfer.find(
+      filter.createdAt ? { createdAt: filter.createdAt } : {}
+    );
 
     // ── Calculs globaux ───────────────────────────────
-    // Paiements de dettes clients — séparés par mode de paiement
     const clientPaymentsComptant = clientPayments
       .filter(p => p.modePaiement !== 'virement')
       .reduce((sum, p) => sum + p.amount, 0);
@@ -367,7 +370,6 @@ const getCaisseReport = async (req, res) => {
 
     const totalAcomptesInitiaux = Math.max(0, totalAmountPaidCredit - totalClientPayments);
 
-    // Encaissé caisse = comptant + acomptes initiaux + paiements dettes comptant
     const totalEncaisse = totalComptant + totalAcomptesInitiaux + clientPaymentsComptant;
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
 
@@ -376,47 +378,48 @@ const getCaisseReport = async (req, res) => {
 
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
-    const depensesComptant = expenses
-      .filter(e => e.category !== 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Dépenses caisse = uniquement les dépenses opérationnelles classiques
+    const depensesComptant = totalDepenses;
 
-    const transfertsBanqueVersCaisse = expenses
-      .filter(e => e.category === 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Transferts banque → caisse = entrées caisse (depuis BankTransfer, pas Expense)
+    const transfertsBanqueVersCaisse = transferts
+      .filter(t => t.direction === 'banque_vers_caisse')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const transfertsCaisseVersBanque = transferts
+      .filter(t => t.direction === 'caisse_vers_banque')
+      .reduce((sum, t) => sum + t.amount, 0);
 
     const paiementsFournisseursComptant = supplierExpenses
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const soldeCaisse = totalEncaisse + transfertsBanqueVersCaisse
+    const soldeCaisse = totalEncaisse + transfertsBanqueVersCaisse - transfertsCaisseVersBanque
                        - depensesComptant - paiementsFournisseursComptant;
 
     // ── Aujourd'hui ───────────────────────────────────
     const startToday = new Date(new Date().setHours(0, 0, 0, 0));
     const endToday   = new Date(new Date().setHours(23, 59, 59, 999));
 
-    const salesToday        = await Sale.find({ createdAt: { $gte: startToday, $lte: endToday } });
-    const clientPayToday    = await ClientPayment.find({ createdAt: { $gte: startToday, $lte: endToday } });
-    const expensesToday     = await Expense.find({ date: { $gte: startToday, $lte: endToday } });
-    const supplierExpToday  = await SupplierExpense.find({ date: { $gte: startToday, $lte: endToday } });
+    const salesToday          = await Sale.find({ createdAt: { $gte: startToday, $lte: endToday } });
+    const clientPayToday      = await ClientPayment.find({ createdAt: { $gte: startToday, $lte: endToday } });
+    const expensesToday       = await Expense.find({ date: { $gte: startToday, $lte: endToday } });
+    const supplierExpToday    = await SupplierExpense.find({ date: { $gte: startToday, $lte: endToday } });
+    const transfertsToday     = await BankTransfer.find({ createdAt: { $gte: startToday, $lte: endToday } });
 
-    const comptantToday        = salesToday.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
-    const creditPaidToday      = salesToday.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
-    const clientPayTodayComptant = clientPayToday
-      .filter(p => p.modePaiement !== 'virement')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const clientPayTodayTotal  = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
-    const acomptesToday        = Math.max(0, creditPaidToday - clientPayTodayTotal);
-    const transfertsBanqueCaisseToday = expensesToday
-      .filter(e => e.category === 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0);
+    const comptantToday          = salesToday.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
+    const creditPaidToday        = salesToday.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
+    const clientPayTodayComptant = clientPayToday.filter(p => p.modePaiement !== 'virement').reduce((sum, p) => sum + p.amount, 0);
+    const clientPayTodayTotal    = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
+    const acomptesToday          = Math.max(0, creditPaidToday - clientPayTodayTotal);
+    const transfertsBanqueCaisseToday = transfertsToday
+      .filter(t => t.direction === 'banque_vers_caisse')
+      .reduce((sum, t) => sum + t.amount, 0);
     const paiementsFournisseursToday = supplierExpToday
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
     const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday;
-    const depensesAujourdhui   = expensesToday
-      .filter(e => e.category !== 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursToday;
+    const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursToday;
 
     // ── Ce mois ───────────────────────────────────────
     const now        = new Date();
@@ -427,24 +430,21 @@ const getCaisseReport = async (req, res) => {
     const clientPayMonth    = await ClientPayment.find({ createdAt: { $gte: startMonth, $lte: endMonth } });
     const expensesMonth     = await Expense.find({ date: { $gte: startMonth, $lte: endMonth } });
     const supplierExpMonth  = await SupplierExpense.find({ date: { $gte: startMonth, $lte: endMonth } });
+    const transfertsMonth   = await BankTransfer.find({ createdAt: { $gte: startMonth, $lte: endMonth } });
 
     const comptantMonth       = salesMonth.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
     const creditPaidMonth     = salesMonth.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
-    const clientPayMonthComptant = clientPayMonth
-      .filter(p => p.modePaiement !== 'virement')
-      .reduce((sum, p) => sum + p.amount, 0);
+    const clientPayMonthComptant = clientPayMonth.filter(p => p.modePaiement !== 'virement').reduce((sum, p) => sum + p.amount, 0);
     const clientPayMonthTotal = clientPayMonth.reduce((sum, p) => sum + p.amount, 0);
     const acomptesMonth       = Math.max(0, creditPaidMonth - clientPayMonthTotal);
-    const transfertsBanqueCaisseMois = expensesMonth
-      .filter(e => e.category === 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0);
+    const transfertsBanqueCaisseMois = transfertsMonth
+      .filter(t => t.direction === 'banque_vers_caisse')
+      .reduce((sum, t) => sum + t.amount, 0);
     const paiementsFournisseursMois = supplierExpMonth
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
     const encaisseMois        = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois;
-    const depensesMois        = expensesMonth
-      .filter(e => e.category !== 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursMois;
+    const depensesMois        = expensesMonth.reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursMois;
     const soldeMois           = encaisseMois - depensesMois;
 
     res.json({
@@ -485,6 +485,7 @@ const getCapitalReport = async (req, res) => {
     const supplierExpenses  = await SupplierExpense.find();
     const clients           = await Client.find({ isActive: true });
     const clientPayments    = await ClientPayment.find();
+    const transferts        = await BankTransfer.find();
 
     // ── 1. CAPITAL INITIAL ─────────────────────────
     const capitalInitial = products.reduce((sum, p) =>
@@ -519,7 +520,6 @@ const getCapitalReport = async (req, res) => {
       .filter(s => s.paymentType === 'comptant')
       .reduce((sum, s) => sum + s.amountPaid, 0);
 
-    // Paiements de dettes clients — séparés par mode de paiement
     const clientPaymentsComptant = clientPayments
       .filter(p => p.modePaiement !== 'virement')
       .reduce((sum, p) => sum + p.amount, 0);
@@ -534,34 +534,32 @@ const getCapitalReport = async (req, res) => {
 
     const totalAcomptesInitiaux = Math.max(0, totalAcomptesPaidCredit - totalClientPayments);
 
-    const transfertsBanqueVersCaisse = expenses
-      .filter(e => e.category === 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Transferts depuis BankTransfer (plus depuis Expense)
+    const transfertsBanqueVersCaisse = transferts
+      .filter(t => t.direction === 'banque_vers_caisse')
+      .reduce((sum, t) => sum + t.amount, 0);
 
-    const depensesComptant = expenses
-      .filter(e => e.category !== 'transfert_caisse')
-      .reduce((sum, e) => sum + e.amount, 0);
+    const transfertsCaisseVersBanque = transferts
+      .filter(t => t.direction === 'caisse_vers_banque')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const depensesComptant = expenses.reduce((sum, e) => sum + e.amount, 0);
 
     const paiementsFournisseursComptant = supplierExpenses
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalDepenses = depensesComptant;
 
-    // Caisse = comptant + acomptes initiaux + paiements dettes comptant
     const caisse = totalVentesComptant + totalAcomptesInitiaux + clientPaymentsComptant
-                   + transfertsBanqueVersCaisse - depensesComptant - paiementsFournisseursComptant;
+                   + transfertsBanqueVersCaisse - transfertsCaisseVersBanque
+                   - depensesComptant - paiementsFournisseursComptant;
 
     // ── 5. BANQUE ──────────────────────────────────
-    const transfertsCaisseVersBanque = expenses
-      .filter(e => e.category === 'transfert_banque')
-      .reduce((sum, e) => sum + e.amount, 0);
-
     const paiementsFournisseursVirement = supplierExpenses
       .filter(e => e.modePaiement === 'virement')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    // Banque = ventes virement + paiements dettes virement + transferts - sorties
     const banque = sales
       .filter(s => s.paymentType === 'virement')
       .reduce((sum, s) => sum + s.amountPaid, 0)

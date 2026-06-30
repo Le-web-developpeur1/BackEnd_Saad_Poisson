@@ -1,17 +1,15 @@
-const Sale           = require('../models/Sale');
+const Sale          = require('../models/Sale');
 const Expense        = require('../models/Expense');
 const BankTransfer   = require('../models/BankTransfer');
 const ClientPayment  = require('../models/ClientPayment');
 const SupplierExpense = require('../models/SupplierExpense');
 
-// @desc    Rapport banque complet
-// @route   GET /api/bank
+
 const getBankReport = async (req, res) => {
   try {
     const ventesVirement = await Sale.find({ paymentType: 'virement' });
     const totalVentesVirement = ventesVirement.reduce((sum, s) => sum + s.amountPaid, 0);
 
-    // Paiements de dettes clients par virement (entrée banque)
     const clientPaymentsVirement = await ClientPayment.find({ modePaiement: 'virement' });
     const totalClientPaymentsVirement = clientPaymentsVirement.reduce((sum, p) => sum + p.amount, 0);
 
@@ -71,40 +69,92 @@ const getBankReport = async (req, res) => {
 const transferToBanque = async (req, res) => {
   try {
     const { amount, direction, note } = req.body;
-    if (!amount || Number(amount) <= 0) return res.status(400).json({ message: 'Montant invalide' });
+    const montant = Number(amount);
+
+    if (!montant || montant <= 0) return res.status(400).json({ message: 'Montant invalide' });
     if (!direction) return res.status(400).json({ message: 'Direction obligatoire' });
 
-    // Créer le transfert
+    // ── Calcul du solde Caisse actuel ──────────────────
+    const sales            = await Sale.find();
+    const clientPayments   = await ClientPayment.find();
+    const expenses         = await Expense.find();
+    const supplierExpenses = await SupplierExpense.find();
+    const transferts       = await BankTransfer.find();
+
+    const totalVentesComptant = sales
+      .filter(s => s.paymentType === 'comptant')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+
+    const clientPaymentsComptant = clientPayments
+      .filter(p => p.modePaiement !== 'virement')
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    const totalAmountPaidCredit = sales
+      .filter(s => s.paymentType === 'credit')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalClientPayments = clientPayments.reduce((sum, p) => sum + p.amount, 0);
+    const acomptesInitiaux = Math.max(0, totalAmountPaidCredit - totalClientPayments);
+
+    const depensesOperationnelles = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    const paiementsFournisseursComptant = supplierExpenses
+      .filter(e => e.modePaiement === 'comptant')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const transfertsEntreeCaisse = transferts
+      .filter(t => t.direction === 'banque_vers_caisse')
+      .reduce((sum, t) => sum + t.amount, 0);
+    const transfertsSortieCaisse = transferts
+      .filter(t => t.direction === 'caisse_vers_banque')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const soldeCaisse = totalVentesComptant + acomptesInitiaux + clientPaymentsComptant
+                       + transfertsEntreeCaisse - transfertsSortieCaisse
+                       - depensesOperationnelles - paiementsFournisseursComptant;
+
+    // ── Calcul du solde Banque actuel ──────────────────
+    const totalVentesVirement = sales
+      .filter(s => s.paymentType === 'virement')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+
+    const clientPaymentsVirement = clientPayments
+      .filter(p => p.modePaiement === 'virement')
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    const paiementsFournisseursVirement = supplierExpenses
+      .filter(e => e.modePaiement === 'virement')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const transfertsEntreeBanque = transferts
+      .filter(t => t.direction === 'caisse_vers_banque')
+      .reduce((sum, t) => sum + t.amount, 0);
+    const transfertsSortieBanque = transferts
+      .filter(t => t.direction === 'banque_vers_caisse')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const soldeBanque = totalVentesVirement + clientPaymentsVirement
+                       + transfertsEntreeBanque - transfertsSortieBanque
+                       - paiementsFournisseursVirement;
+
+    // ── Validation du solde disponible ─────────────────
+    if (direction === 'caisse_vers_banque' && montant > soldeCaisse) {
+      return res.status(400).json({
+        message: `Solde caisse insuffisant. Disponible : ${soldeCaisse} GNF`
+      });
+    }
+    if (direction === 'banque_vers_caisse' && montant > soldeBanque) {
+      return res.status(400).json({
+        message: `Solde banque insuffisant. Disponible : ${soldeBanque} GNF`
+      });
+    }
+
+    // ── Créer le transfert (aucune Expense créée) ──────
     const transfer = await BankTransfer.create({
-      amount:     Number(amount),
+      amount:     montant,
       direction,
       note:       note || '',
       recordedBy: req.user._id
     });
-
-    if (direction === 'caisse_vers_banque') {
-      // Caisse diminue → dépense catégorie transfert_banque
-      // Banque augmente → géré via BankTransfer (pas de dépense banque)
-      await Expense.create({
-        title:      `Transfert caisse → banque${note ? ' — ' + note : ''}`,
-        category:   'transfert_banque',
-        amount:     Number(amount),
-        date:       new Date(),
-        note:       note || '',
-        recordedBy: req.user._id
-      });
-    } else {
-      // Banque diminue → géré via BankTransfer (pas de dépense caisse)
-      // Caisse augmente → entrée catégorie transfert_caisse
-      await Expense.create({
-        title:      `Transfert banque → caisse${note ? ' — ' + note : ''}`,
-        category:   'transfert_caisse',
-        amount:     Number(amount),
-        date:       new Date(),
-        note:       note || '',
-        recordedBy: req.user._id
-      });
-    }
 
     res.status(201).json({ message: 'Transfert effectué', transfer });
   } catch (error) {
