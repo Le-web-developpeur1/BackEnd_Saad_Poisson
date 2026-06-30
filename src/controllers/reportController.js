@@ -415,9 +415,11 @@ const getCaisseReport = async (req, res) => {
     const transfertsBanqueCaisseToday = transfertsToday
       .filter(t => t.direction === 'banque_vers_caisse')
       .reduce((sum, t) => sum + t.amount, 0);
+
     const paiementsFournisseursToday = supplierExpToday
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
+      
     const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday;
     const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursToday;
 
@@ -432,20 +434,27 @@ const getCaisseReport = async (req, res) => {
     const supplierExpMonth  = await SupplierExpense.find({ date: { $gte: startMonth, $lte: endMonth } });
     const transfertsMonth   = await BankTransfer.find({ createdAt: { $gte: startMonth, $lte: endMonth } });
 
-    const comptantMonth       = salesMonth.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
-    const creditPaidMonth     = salesMonth.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
+    const comptantMonth          = salesMonth.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
+    const creditPaidMonth        = salesMonth.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
     const clientPayMonthComptant = clientPayMonth.filter(p => p.modePaiement !== 'virement').reduce((sum, p) => sum + p.amount, 0);
-    const clientPayMonthTotal = clientPayMonth.reduce((sum, p) => sum + p.amount, 0);
-    const acomptesMonth       = Math.max(0, creditPaidMonth - clientPayMonthTotal);
+    const clientPayMonthTotal    = clientPayMonth.reduce((sum, p) => sum + p.amount, 0);
+    const acomptesMonth          = Math.max(0, creditPaidMonth - clientPayMonthTotal);
     const transfertsBanqueCaisseMois = transfertsMonth
       .filter(t => t.direction === 'banque_vers_caisse')
       .reduce((sum, t) => sum + t.amount, 0);
+
+    // Dépenses opérationnelles uniquement (loyer, salaires, transport...)
+    const depensesMois = expensesMonth.reduce((sum, e) => sum + e.amount, 0);
+
+    // Paiements fournisseurs — séparés, pas comptés comme "dépenses"
     const paiementsFournisseursMois = supplierExpMonth
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
-    const encaisseMois        = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois;
-    const depensesMois        = expensesMonth.reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursMois;
-    const soldeMois           = encaisseMois - depensesMois;
+
+    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois;
+
+    // Solde du mois = encaissé − dépenses opérationnelles − paiements fournisseurs
+    const soldeMois = encaisseMois - depensesMois;
 
     res.json({
       totalVentes,
@@ -466,6 +475,7 @@ const getCaisseReport = async (req, res) => {
       nbTransactionsAujourdhui: salesToday.length,
       encaisseMois,
       depensesMois,
+      paiementsFournisseursMois,
       soldeMois,
       nbTransactionsMois: salesMonth.length,
       sales,

@@ -2,6 +2,66 @@ const Expense = require('../models/Expense');
 const Supplier = require('../models/Supplier');
 const SupplierPurchase = require('../models/SupplierPurchase');
 const SupplierExpense = require('../models/SupplierExpense');
+const Sale = require('../models/Sale');
+const ClientPayment = require('../models/ClientPayment');
+const BankTransfer = require('../models/BankTransfer');
+
+// Fonction utilitaire pour calculer le solde caisse et banque actuels
+const getSoldesActuels = async () => {
+  const sales            = await Sale.find();
+  const clientPayments   = await ClientPayment.find();
+  const expenses         = await Expense.find();
+  const supplierExpenses = await SupplierExpense.find();
+  const transferts       = await BankTransfer.find();
+
+  const totalVentesComptant = sales
+    .filter(s => s.paymentType === 'comptant')
+    .reduce((sum, s) => sum + s.amountPaid, 0);
+
+  const clientPaymentsComptant = clientPayments
+    .filter(p => p.modePaiement !== 'virement')
+    .reduce((sum, p) => sum + p.amount, 0);
+  const clientPaymentsVirement = clientPayments
+    .filter(p => p.modePaiement === 'virement')
+    .reduce((sum, p) => sum + p.amount, 0);
+  const totalClientPayments = clientPaymentsComptant + clientPaymentsVirement;
+
+  const totalAmountPaidCredit = sales
+    .filter(s => s.paymentType === 'credit')
+    .reduce((sum, s) => sum + s.amountPaid, 0);
+  const acomptesInitiaux = Math.max(0, totalAmountPaidCredit - totalClientPayments);
+
+  const depensesOperationnelles = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  const paiementsFournisseursComptant = supplierExpenses
+    .filter(e => e.modePaiement === 'comptant')
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const transfertsBanqueVersCaisse = transferts
+    .filter(t => t.direction === 'banque_vers_caisse')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const transfertsCaisseVersBanque = transferts
+    .filter(t => t.direction === 'caisse_vers_banque')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const soldeCaisse = totalVentesComptant + acomptesInitiaux + clientPaymentsComptant
+                     + transfertsBanqueVersCaisse - transfertsCaisseVersBanque
+                     - depensesOperationnelles - paiementsFournisseursComptant;
+
+  const totalVentesVirement = sales
+    .filter(s => s.paymentType === 'virement')
+    .reduce((sum, s) => sum + s.amountPaid, 0);
+
+  const paiementsFournisseursVirement = supplierExpenses
+    .filter(e => e.modePaiement === 'virement')
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const soldeBanque = totalVentesVirement + clientPaymentsVirement
+                     + transfertsCaisseVersBanque - transfertsBanqueVersCaisse
+                     - paiementsFournisseursVirement;
+
+  return { soldeCaisse, soldeBanque };
+};
 
 const getSuppliers = async (req, res) => {
   try {
@@ -52,7 +112,7 @@ const deleteSupplier = async (req, res) => {
 
 const recordSupplierPayment = async (req, res) => {
   try {
-    const { amount, note, modePaiement } = req.body; // ← modePaiement depuis req.body
+    const { amount, note, modePaiement } = req.body;
     const supplier = await Supplier.findById(req.params.id);
     if (!supplier) return res.status(404).json({ message: 'Fournisseur introuvable' });
 
@@ -63,6 +123,19 @@ const recordSupplierPayment = async (req, res) => {
       message: `Le montant ne peut pas dépasser le solde dû (${supplier.balance} GNF)`
     });
     if (!modePaiement) return res.status(400).json({ message: 'Mode de paiement obligatoire' });
+
+    // ── Validation du solde disponible ─────────────────
+    const { soldeCaisse, soldeBanque } = await getSoldesActuels();
+    if (modePaiement === 'comptant' && paye > soldeCaisse) {
+      return res.status(400).json({
+        message: `Solde caisse insuffisant. Disponible : ${soldeCaisse} GNF`
+      });
+    }
+    if (modePaiement === 'virement' && paye > soldeBanque) {
+      return res.status(400).json({
+        message: `Solde banque insuffisant. Disponible : ${soldeBanque} GNF`
+      });
+    }
 
     // Mettre à jour les achats impayés/partiels par ordre chronologique
     const achatsRestants = await SupplierPurchase.find({
@@ -92,7 +165,6 @@ const recordSupplierPayment = async (req, res) => {
       recordedBy:   req.user._id
     });
 
-    // Mettre à jour le solde fournisseur
     supplier.totalPaid += paye;
     supplier.balance   -= paye;
     await supplier.save();
@@ -112,7 +184,6 @@ const recordPurchase = async (req, res) => {
     if (!supplier) return res.status(404).json({ message: 'Fournisseur introuvable' });
     if (!items || items.length === 0) return res.status(400).json({ message: 'Ajoutez au moins un article' });
 
-    // Calcul du montant total
     const processedItems = items.map(item => ({
       libelle:         item.libelle,
       quantiteCartons: Number(item.quantiteCartons || 0),
@@ -121,12 +192,26 @@ const recordPurchase = async (req, res) => {
     }));
 
     const montantTotal   = processedItems.reduce((sum, i) => sum + i.montantTotal, 0);
-    const paye           = Math.min(Number(montantPaye || 0), montantTotal); // ne dépasse jamais le total
+    const paye           = Math.min(Number(montantPaye || 0), montantTotal);
     const montantRestant = Math.max(0, montantTotal - paye);
 
-    // Validation mode paiement
     if (paye > 0 && !modePaiement) {
       return res.status(400).json({ message: 'Mode de paiement obligatoire si montant payé > 0' });
+    }
+
+    // ── Validation du solde disponible ─────────────────
+    if (paye > 0) {
+      const { soldeCaisse, soldeBanque } = await getSoldesActuels();
+      if (modePaiement === 'comptant' && paye > soldeCaisse) {
+        return res.status(400).json({
+          message: `Solde caisse insuffisant. Disponible : ${soldeCaisse} GNF`
+        });
+      }
+      if (modePaiement === 'virement' && paye > soldeBanque) {
+        return res.status(400).json({
+          message: `Solde banque insuffisant. Disponible : ${soldeBanque} GNF`
+        });
+      }
     }
 
     let statut = 'impayé';
@@ -145,7 +230,6 @@ const recordPurchase = async (req, res) => {
       });
     }
 
-    // Créer l'achat
     const purchase = await SupplierPurchase.create({
       supplier:      supplier._id,
       supplierName:  supplier.name,
@@ -158,7 +242,6 @@ const recordPurchase = async (req, res) => {
       recordedBy:    req.user._id
     });
 
-    // Mettre à jour les totaux du fournisseur
     supplier.totalPurchases += montantTotal;
     supplier.totalPaid      += paye;
     supplier.balance        += montantRestant;
