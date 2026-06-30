@@ -14,7 +14,6 @@ const supplierPurchaseSchema = new mongoose.Schema({
   montantRestant: { type: Number, default: 0 },
   modePaiement:   { type: String, enum: ['comptant', 'virement', 'non_payé'], default: 'non_payé' },
   statut:         { type: String, enum: ['payé', 'partiel', 'impayé'], default: 'impayé' },
-  expenseId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Expense', default: null },
   recordedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 

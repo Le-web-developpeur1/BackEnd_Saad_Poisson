@@ -6,6 +6,11 @@ const clientPaymentSchema = new mongoose.Schema({
   clientPhone: { type: String, default: '' },
   amount:      { type: Number, required: true },
   remainingDebt: { type: Number, default: 0},
+  modePaiement: {
+    type: String,
+    enum: ['comptant', 'virement'],
+    default: 'comptant'
+  },
   paidBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 

@@ -2,61 +2,51 @@ const Sale           = require('../models/Sale');
 const Expense        = require('../models/Expense');
 const BankTransfer   = require('../models/BankTransfer');
 const ClientPayment  = require('../models/ClientPayment');
+const SupplierExpense = require('../models/SupplierExpense');
 
 // @desc    Rapport banque complet
 // @route   GET /api/bank
 const getBankReport = async (req, res) => {
   try {
-    // ── Entrées banque ────────────────────────────
     const ventesVirement = await Sale.find({ paymentType: 'virement' });
     const totalVentesVirement = ventesVirement.reduce((sum, s) => sum + s.amountPaid, 0);
 
-    // Transferts caisse → banque (entrées banque)
+    // Paiements de dettes clients par virement (entrée banque)
+    const clientPaymentsVirement = await ClientPayment.find({ modePaiement: 'virement' });
+    const totalClientPaymentsVirement = clientPaymentsVirement.reduce((sum, p) => sum + p.amount, 0);
+
     const transfertsEntree = await BankTransfer.find({ direction: 'caisse_vers_banque' });
     const totalTransfertsEntree = transfertsEntree.reduce((sum, t) => sum + t.amount, 0);
 
-    // ── Sorties banque ────────────────────────────
-    // Transferts banque → caisse (sorties banque)
     const transfertsSortie = await BankTransfer.find({ direction: 'banque_vers_caisse' });
     const totalTransfertsSortie = transfertsSortie.reduce((sum, t) => sum + t.amount, 0);
 
-    // Paiements fournisseurs par virement (sorties banque)
-    const depensesVirement = await Expense.find({ category: 'virement_fournisseur' });
-    const totalDepensesVirement = depensesVirement.reduce((sum, e) => sum + e.amount, 0);
+    const paiementsFournisseurs = await SupplierExpense.find({ modePaiement: 'virement' });
+    const totalDepensesVirement = paiementsFournisseurs.reduce((sum, e) => sum + e.amount, 0);
 
-    // ── Solde banque ──────────────────────────────
-    const soldeBanque = totalVentesVirement + totalTransfertsEntree
+    const soldeBanque = totalVentesVirement + totalClientPaymentsVirement + totalTransfertsEntree
                       - totalDepensesVirement - totalTransfertsSortie;
 
-    // ── 10 derniers mouvements ────────────────────
     const mouvements = [
       ...ventesVirement.map(s => ({
-        type:      'entrée',
-        libelle:   `Vente virement — ${s.clientName}`,
-        montant:   s.amountPaid,
-        date:      s.createdAt,
-        categorie: 'vente_virement'
+        type: 'entrée', libelle: `Vente virement — ${s.clientName}`,
+        montant: s.amountPaid, date: s.createdAt, categorie: 'vente_virement'
+      })),
+      ...clientPaymentsVirement.map(p => ({
+        type: 'entrée', libelle: `Paiement dette — ${p.clientName}`,
+        montant: p.amount, date: p.createdAt, categorie: 'paiement_dette_client'
       })),
       ...transfertsEntree.map(t => ({
-        type:      'entrée',
-        libelle:   `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`,
-        montant:   t.amount,
-        date:      t.createdAt,
-        categorie: 'transfert_entree'
+        type: 'entrée', libelle: `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`,
+        montant: t.amount, date: t.createdAt, categorie: 'transfert_entree'
       })),
       ...transfertsSortie.map(t => ({
-        type:      'sortie',
-        libelle:   `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`,
-        montant:   t.amount,
-        date:      t.createdAt,
-        categorie: 'transfert_sortie'
+        type: 'sortie', libelle: `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`,
+        montant: t.amount, date: t.createdAt, categorie: 'transfert_sortie'
       })),
-      ...depensesVirement.map(e => ({
-        type:      'sortie',
-        libelle:   e.title,
-        montant:   e.amount,
-        date:      e.date || e.createdAt,
-        categorie: 'paiement_fournisseur'
+      ...paiementsFournisseurs.map(e => ({
+        type: 'sortie', libelle: `${e.title} — ${e.supplierName}`,
+        montant: e.amount, date: e.date || e.createdAt, categorie: 'paiement_fournisseur'
       }))
     ]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -65,6 +55,7 @@ const getBankReport = async (req, res) => {
     res.json({
       soldeBanque,
       totalVentesVirement,
+      totalClientPaymentsVirement,
       totalTransfertsEntree,
       totalTransfertsSortie,
       totalDepensesVirement,

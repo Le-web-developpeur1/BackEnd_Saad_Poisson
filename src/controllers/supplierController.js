@@ -1,6 +1,7 @@
 const Expense = require('../models/Expense');
 const Supplier = require('../models/Supplier');
 const SupplierPurchase = require('../models/SupplierPurchase');
+const SupplierExpense = require('../models/SupplierExpense');
 
 const getSuppliers = async (req, res) => {
   try {
@@ -81,15 +82,14 @@ const recordSupplierPayment = async (req, res) => {
       resteAPayer -= paiementPourCetAchat;
     }
 
-    // Créer la dépense
-    const categorieDepense = modePaiement === 'virement' ? 'virement_fournisseur' : 'achat_fournisseur';
-    await Expense.create({
-      title:      `Versement fournisseur — ${supplier.name}${note ? ' — ' + note : ''}`,
-      category:   categorieDepense,
-      amount:     paye,
-      date:       new Date(),
-      note:       note || '',
-      recordedBy: req.user._id
+    await SupplierExpense.create({
+      supplier:     supplier._id,
+      supplierName: supplier.name,
+      title:        `Versement fournisseur${note ? ' — ' + note : ''}`,
+      amount:       paye,
+      modePaiement,
+      note:         note || '',
+      recordedBy:   req.user._id
     });
 
     // Mettre à jour le solde fournisseur
@@ -102,22 +102,6 @@ const recordSupplierPayment = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-  
-  // const recordPurchase = async (req, res) => {
-  //   try {
-  //     const { amount } = req.body;
-  //     const supplier = await Supplier.findById(req.params.id);
-  //     if (!supplier) return res.status(404).json({ message: 'Fournisseur introuvable' });
-  
-  //     supplier.totalPurchases += amount;
-  //     supplier.balance = supplier.totalPurchases - supplier.totalPaid;
-  //     await supplier.save();
-  
-  //     res.json({ message: 'Achat enregistré', supplier });
-  //   } catch (error) {
-  //     res.status(500).json({ message: error.message });
-  //   }
-  // };
 
 // @desc    Enregistrer un achat fournisseur détaillé
 // @route   POST /api/suppliers/:id/purchase
@@ -149,19 +133,16 @@ const recordPurchase = async (req, res) => {
     if (paye >= montantTotal) statut = 'payé';
     else if (paye > 0) statut = 'partiel';
 
-    // Créer une dépense automatiquement si paiement effectué
-    let expenseId = null;
     if (paye > 0) {
-      const categorieDepense = modePaiement === 'virement' ? 'virement_fournisseur' : 'achat_fournisseur';
-      const expense = await Expense.create({
-        title:      `Achat — ${supplier.name} (${processedItems.map(i => i.libelle).join(', ')})`,
-        category:   categorieDepense,
-        amount:     paye,
-        date:       new Date(),
-        note:       `Paiement ${modePaiement} pour achat fournisseur`,
-        recordedBy: req.user._id
+      await SupplierExpense.create({
+        supplier:     supplier._id,
+        supplierName: supplier.name,
+        title:        `Achat — ${processedItems.map(i => i.libelle).join(', ')}`,
+        amount:       paye,
+        modePaiement,
+        note:         `Paiement ${modePaiement} pour achat fournisseur`,
+        recordedBy:   req.user._id
       });
-      expenseId = expense._id;
     }
 
     // Créer l'achat
@@ -174,7 +155,6 @@ const recordPurchase = async (req, res) => {
       montantRestant,
       modePaiement:  paye > 0 ? modePaiement : 'non_payé',
       statut,
-      expenseId,
       recordedBy:    req.user._id
     });
 

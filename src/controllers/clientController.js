@@ -54,54 +54,59 @@ const deleteClient = async (req, res) => {
 };
 
 const recordClientPayment = async (req, res) => {
-    try {
-      const { amount } = req.body;
-      const client = await Client.findById(req.params.id);
-      if (!client) return res.status(404).json({ message: 'Client introuvable' });
-  
-      if (amount > client.currentDebt) {
-        return res.status(400).json({ message: 'Le montant dépasse la dette actuelle' });
-      }
-  
-      client.currentDebt -= amount;
-      client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
-      await client.save();
-      
-      //Mettre à jour les ventes à crédit (du plus ancien au plus récent)
-      let remainingPayment = amount;
-      const creditSales = await Sale.find({
-        client: client._id,
-        paymentType: 'credit',
-        remainingAmount: { $gt: 0 }
-      }).sort({ createAt: 1 });
+  try {
+    const { amount, modePaiement } = req.body;
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
 
-      for (const sale of creditSales) {
-        if (remainingPayment <= 0) break;
-
-        const payment = Math.min(remainingPayment, sale.remainingAmount);
-        sale.amountPaid += payment;
-        sale.remainingAmount -= payment;
-
-        if (sale.remainingAmount === 0) sale.status = 'payé';
-        else sale.status = 'partiel';
-
-        await sale.save();
-      }
-
-      //Créer un enregistrement de paiement pour la caisse
-      const newPayment = await ClientPayment.create({
-        client: client.id,
-        clientName: client.name,
-        clientPhone: client.phone || '',
-        amount: Number(amount),
-        remainingDebt: client.currentDebt,
-        paidBy: req.user._id,
-      });
-
-      res.json({ message: 'Paiement enregistré', client, paymentId: newPayment._id });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+    if (amount > client.currentDebt) {
+      return res.status(400).json({ message: 'Le montant dépasse la dette actuelle' });
     }
+    if (!modePaiement) {
+      return res.status(400).json({ message: 'Mode de paiement obligatoire' });
+    }
+
+    client.currentDebt -= amount;
+    client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
+    await client.save();
+
+    // Mettre à jour les ventes à crédit (du plus ancien au plus récent)
+    let remainingPayment = amount;
+    const creditSales = await Sale.find({
+      client: client._id,
+      paymentType: 'credit',
+      remainingAmount: { $gt: 0 }
+    }).sort({ createdAt: 1 });
+
+    for (const sale of creditSales) {
+      if (remainingPayment <= 0) break;
+
+      const payment = Math.min(remainingPayment, sale.remainingAmount);
+      sale.amountPaid       += payment;
+      sale.remainingAmount  -= payment;
+
+      if (sale.remainingAmount === 0) sale.status = 'payé';
+      else sale.status = 'partiel';
+
+      await sale.save();
+      remainingPayment -= payment;
+    }
+
+    // Créer un enregistrement de paiement avec mode de paiement
+    const newPayment = await ClientPayment.create({
+      client:        client._id,
+      clientName:    client.name,
+      clientPhone:   client.phone || '',
+      amount:        Number(amount),
+      remainingDebt: client.currentDebt,
+      modePaiement,
+      paidBy:        req.user._id,
+    });
+
+    res.json({ message: 'Paiement enregistré', client, paymentId: newPayment._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 const getClientCredits = async (req, res) => {
