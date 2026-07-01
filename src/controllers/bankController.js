@@ -3,7 +3,7 @@ const Expense        = require('../models/Expense');
 const BankTransfer   = require('../models/BankTransfer');
 const ClientPayment  = require('../models/ClientPayment');
 const SupplierExpense = require('../models/SupplierExpense');
-
+const BankIn          = require('../models/BankIn');
 
 const getBankReport = async (req, res) => {
   try {
@@ -22,7 +22,11 @@ const getBankReport = async (req, res) => {
     const paiementsFournisseurs = await SupplierExpense.find({ modePaiement: 'virement' });
     const totalDepensesVirement = paiementsFournisseurs.reduce((sum, e) => sum + e.amount, 0);
 
-    const soldeBanque = totalVentesVirement + totalClientPaymentsVirement + totalTransfertsEntree
+    const bankIns = await BankIn.find();
+    const totalBankIns = bankIns.reduce((sum, b) => sum + b.amount, 0);
+
+    const soldeBanque = totalVentesVirement + totalClientPaymentsVirement 
+                      + totalTransfertsEntree + totalBankIns
                       - totalDepensesVirement - totalTransfertsSortie;
 
     const mouvements = [
@@ -57,7 +61,8 @@ const getBankReport = async (req, res) => {
       totalTransfertsEntree,
       totalTransfertsSortie,
       totalDepensesVirement,
-      mouvements
+      mouvements,
+      totalBankIns
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

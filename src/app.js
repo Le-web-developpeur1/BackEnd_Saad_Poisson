@@ -19,6 +19,7 @@ const systemConfigRoutes = require('./routes/systemConfigRoutes');
 const notificationRoutes = require('./routes/notificationsRoutes');
 const employeeRoutes    = require('./routes/employeeRoutes');
 const bankRoutes        = require('./routes/bankRoutes');
+const cashInRoutes = require('./routes/cashInRoutes');
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use('/api/bank', bankRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/system',   systemConfigRoutes);
+app.use('/api/cashin', cashInRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

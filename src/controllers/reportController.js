@@ -10,6 +10,8 @@ const ClientPayment = require('../models/ClientPayment');
 const { exportPDF, exportWord, exportCSV } = require('../utils/exportReport');
 const SupplierExpense = require('../models/SupplierExpense');
 const BankTransfer = require('../models/BankTransfer');
+const CashIn = require('../models/CashIn');
+const BankIn = require('../models/BankIn');
 
 const formatAmount = (amount) => {
   if (amount === undefined || amount === null || isNaN(amount)) return '0';
@@ -361,6 +363,11 @@ const getCaisseReport = async (req, res) => {
       filter.createdAt ? { createdAt: filter.createdAt } : {}
     );
 
+    //Ajout de l'argent dans la caisse et de la banque
+    const cashIns = await CashIn.find();
+    const totalCashIns = cashIns.reduce((sum, c) => sum + c.amount, 0);
+
+    
     // ── Calculs globaux ───────────────────────────────
     const clientPaymentsComptant = clientPayments
       .filter(p => p.modePaiement !== 'virement')
@@ -409,7 +416,7 @@ const getCaisseReport = async (req, res) => {
       .reduce((sum, e) => sum + e.amount, 0);
 
     const soldeCaisse = totalEncaisse + transfertsBanqueVersCaisse - transfertsCaisseVersBanque
-                       - depensesComptant - paiementsFournisseursComptant;
+                       - depensesComptant - paiementsFournisseursComptant + totalCashIns;
 
     // ── Aujourd'hui ───────────────────────────────────
     const startToday = new Date(new Date().setHours(0, 0, 0, 0));
@@ -496,7 +503,8 @@ const getCaisseReport = async (req, res) => {
       soldeMois,
       nbTransactionsMois: salesMonth.length,
       sales,
-      expenses
+      expenses,
+      totalCashIns
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -513,6 +521,10 @@ const getCapitalReport = async (req, res) => {
     const clients           = await Client.find({ isActive: true });
     const clientPayments    = await ClientPayment.find();
     const transferts        = await BankTransfer.find();
+
+    //Ajout de l'argent dans la banque
+    const bankIns = await BankIn.find();
+    const totalBankIns = bankIns.reduce((sum, b) => sum + b.amount, 0);
 
     // ── 1. CAPITAL INITIAL ─────────────────────────
     const capitalInitial = products.reduce((sum, p) =>
@@ -578,8 +590,12 @@ const getCapitalReport = async (req, res) => {
 
     const totalDepenses = depensesComptant;
 
+
+    const cashIns = await CashIn.find();
+    const totalCashIns = cashIns.reduce((sum, c) => sum + c.amount, 0);
+
     const caisse = totalVentesComptant + totalAcomptesInitiaux + clientPaymentsComptant
-                   + transfertsBanqueVersCaisse - transfertsCaisseVersBanque
+                   + transfertsBanqueVersCaisse - transfertsCaisseVersBanque + totalCashIns
                    - depensesComptant - paiementsFournisseursComptant;
 
     // ── 5. BANQUE ──────────────────────────────────
@@ -591,7 +607,7 @@ const getCapitalReport = async (req, res) => {
       .filter(s => s.paymentType === 'virement')
       .reduce((sum, s) => sum + s.amountPaid, 0)
       + clientPaymentsVirement
-      + transfertsCaisseVersBanque
+      + transfertsCaisseVersBanque + totalBankIns
       - paiementsFournisseursVirement
       - transfertsBanqueVersCaisse;
 
@@ -625,7 +641,7 @@ const getCapitalReport = async (req, res) => {
         valeurVentesAchat,
         nbProduits: products.length,
         nbClients:  clients.filter(c => c.currentDebt > 0).length,
-      }
+      },
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
