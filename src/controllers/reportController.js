@@ -421,7 +421,7 @@ const getCaisseReport = async (req, res) => {
       .reduce((sum, e) => sum + e.amount, 0);
       
     const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday;
-    const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0) + paiementsFournisseursToday;
+    const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0);
 
     // ── Ce mois ───────────────────────────────────────
     const now        = new Date();
@@ -454,7 +454,7 @@ const getCaisseReport = async (req, res) => {
     const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois;
 
     // Solde du mois = encaissé − dépenses opérationnelles − paiements fournisseurs
-    const soldeMois = encaisseMois - depensesMois;
+    const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois;
 
     res.json({
       totalVentes,
@@ -471,7 +471,8 @@ const getCaisseReport = async (req, res) => {
       nbTransactions: sales.length,
       encaisseAujourdhui,
       depensesAujourdhui,
-      soldeAujourdhui: encaisseAujourdhui - depensesAujourdhui,
+      paiementsFournisseursToday,
+      soldeAujourdhui: encaisseAujourdhui - depensesAujourdhui - paiementsFournisseursToday,
       nbTransactionsAujourdhui: salesToday.length,
       encaisseMois,
       depensesMois,
