@@ -132,6 +132,7 @@ const createSale = async (req, res) => {
       discount,
       totalAmount,
       paymentType,
+      initialAmountPaid: paid,
       amountPaid: paid,
       remainingAmount: totalAmount - paid,
       status,

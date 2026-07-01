@@ -59,6 +59,10 @@ const saleSchema = new mongoose.Schema({
     enum: ['comptant', 'credit', 'virement'],
     required: true
   },
+  initialAmountPaid: {
+    type: Number,
+    default: 0
+  },
   amountPaid: {
     type: Number,
     default: 0

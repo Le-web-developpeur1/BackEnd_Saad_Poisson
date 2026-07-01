@@ -694,29 +694,30 @@ const generateClientHistoryPDF = async (client, history, res) => {
     doc.roundedRect(30, y, 535, 70, 6).lineWidth(1).stroke(NAVY);
     doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('INFORMATIONS CLIENT', 42, y + 10);
     doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Nom : ${client.name}`,           42,  y + 26)
+      .text(`Nom : ${client.name}`,              42, y + 26)
       .text(`Téléphone : ${client.phone || '—'}`, 42, y + 40)
       .text(`Adresse : ${client.address || '—'}`, 42, y + 54);
 
     doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Dette actuelle : `, 320, y + 26)
-      .font('Helvetica-Bold').fillColor(client.currentDebt > 0 ? '#e53e3e' : '#16a34a')
+      .text(`Dette actuelle : `, 320, y + 26);
+    doc.font('Helvetica-Bold').fillColor(client.currentDebt > 0 ? '#e53e3e' : '#16a34a')
       .text(`${formatAmount(client.currentDebt)} GNF`, 320, y + 26, { align: 'right', width: 229 });
 
     doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Plafond crédit : `, 320, y + 40)
-      .font('Helvetica-Bold').fillColor(NAVY)
+      .text(`Plafond crédit : `, 320, y + 40);
+    doc.font('Helvetica-Bold').fillColor(NAVY)
       .text(`${formatAmount(client.creditLimit)} GNF`, 320, y + 40, { align: 'right', width: 229 });
 
     doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Statut : `, 320, y + 54)
-      .font('Helvetica-Bold').fillColor(client.isBlocked ? '#e53e3e' : '#16a34a')
+      .text(`Statut : `, 320, y + 54);
+    doc.font('Helvetica-Bold').fillColor(client.isBlocked ? '#e53e3e' : '#16a34a')
       .text(client.isBlocked ? 'BLOQUÉ' : 'ACTIF', 320, y + 54, { align: 'right', width: 229 });
 
     // ── TABLEAU HISTORIQUE ────────────────────────────
     y += 90;
-    const colX = { date: 30, type: 110, ref: 190, montant: 300, paye: 385, reste: 465 };
+    const colX = { date: 30, type: 110, ref: 185, montant: 295, paye: 375, reste: 460 };
 
+    // En-tête tableau
     doc.rect(30, y, 535, 24).fill(NAVY);
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF');
     doc.text('Date',       colX.date + 4,    y + 8);
@@ -726,15 +727,15 @@ const generateClientHistoryPDF = async (client, history, res) => {
     doc.text('Payé',       colX.paye + 4,    y + 8);
     doc.text('Reste',      colX.reste + 4,   y + 8);
 
+    const tableStartY = y;
     y += 24;
     const rowH = 22;
 
     history.forEach((item, i) => {
       // Nouvelle page si nécessaire
-      if (y + rowH > 780) {
+      if (y + rowH > 760) {
         doc.addPage();
         y = 30;
-        // Ré-afficher l'en-tête du tableau
         doc.rect(30, y, 535, 24).fill(NAVY);
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF');
         doc.text('Date',      colX.date + 4,    y + 8);
@@ -763,7 +764,7 @@ const generateClientHistoryPDF = async (client, history, res) => {
 
       // Référence
       doc.font('Helvetica').fillColor('#555')
-        .text(item.reference || '—', colX.ref + 4, y + 7);
+        .text(item.reference || '—', colX.ref + 4, y + 7, { width: 100 });
 
       // Montant
       doc.fillColor('#222')
@@ -771,40 +772,66 @@ const generateClientHistoryPDF = async (client, history, res) => {
 
       // Payé
       if (item.type === 'vente') {
-        doc.fillColor('#16a34a')
-          .text(`${formatAmount(item.paye || 0)} GNF`, colX.paye + 4, y + 7);
+        // Pour une vente → affiche l'acompte initial uniquement
+        const paye = item.paye || 0;
+        doc.fillColor(paye > 0 ? '#16a34a' : '#999')
+          .text(`${formatAmount(paye)} GNF`, colX.paye + 4, y + 7);
       } else {
+        // Pour un paiement → affiche le montant payé
         doc.fillColor('#16a34a').font('Helvetica-Bold')
           .text(`${formatAmount(item.montant)} GNF`, colX.paye + 4, y + 7);
       }
 
       // Reste
-      const reste = item.reste || 0;
-      doc.font('Helvetica-Bold')
-        .fillColor(reste > 0 ? '#e53e3e' : '#16a34a')
-        .text(`${formatAmount(reste)} GNF`, colX.reste + 4, y + 7);
+      if (item.type === 'vente') {
+        // Pour une vente → reste = totalAmount - acompte initial
+        const reste = item.reste || 0;
+        doc.font('Helvetica-Bold')
+          .fillColor(reste > 0 ? '#e53e3e' : '#16a34a')
+          .text(`${formatAmount(reste)} GNF`, colX.reste + 4, y + 7);
+      } else {
+        // Pour un paiement → solde global du client après ce paiement
+        doc.font('Helvetica-Bold').fillColor('#e53e3e')
+          .text(`${formatAmount(item.reste || 0)} GNF`, colX.reste + 4, y + 7);
+      }
 
       y += rowH;
     });
 
     // Bordure du tableau
-    doc.rect(30, 242, 535, y - 242).lineWidth(0.8).stroke(NAVY);
+    doc.rect(30, tableStartY, 535, y - tableStartY).lineWidth(0.8).stroke(NAVY);
 
     // ── RÉSUMÉ FINAL ──────────────────────────────────
     y += 16;
-    const totalVentes   = history.filter(h => h.type === 'vente').reduce((sum, h) => sum + h.montant, 0);
-    const totalPaiements = history.filter(h => h.type === 'paiement').reduce((sum, h) => sum + h.montant, 0);
 
-    doc.rect(30, y, 535, 60).fill('#F8FAFC');
-    doc.rect(30, y, 535, 60).lineWidth(0.8).stroke(NAVY);
+    const totalVentes    = history
+      .filter(h => h.type === 'vente')
+      .reduce((sum, h) => sum + h.montant, 0);
+
+    const resteTotal = client.currentDebt; // dette actuelle du client
+    const totalPaiements = totalVentes - resteTotal;     // paiements ultérieurs
+
+    const resumeH = 80; // hauteur du bloc résumé
+    doc.rect(30, y, 535, resumeH).fill('#F8FAFC');
+    doc.rect(30, y, 535, resumeH).lineWidth(0.8).stroke(NAVY);
 
     doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY)
       .text('RÉSUMÉ', 42, y + 10);
+
     doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Total achats :`, 42, y + 26)
+      .text(`Total Ventes :`, 42, y + 26);
+    doc.font('Helvetica-Bold').fillColor('#222')
       .text(`${formatAmount(totalVentes)} GNF`, 42, y + 26, { align: 'right', width: 493 });
-    doc.text(`Total paiements reçus :`, 42, y + 42)
+
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Total paiements reçus :`, 42, y + 42);
+    doc.font('Helvetica-Bold').fillColor('#16a34a')
       .text(`${formatAmount(totalPaiements)} GNF`, 42, y + 42, { align: 'right', width: 493 });
+
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
+      .text(`Reste dû :`, 42, y + 58);
+    doc.font('Helvetica-Bold').fillColor(resteTotal > 0 ? '#e53e3e' : '#16a34a')
+      .text(`${formatAmount(resteTotal)} GNF`, 42, y + 58, { align: 'right', width: 493 });
 
     // ── PIED DE PAGE ──────────────────────────────────
     doc.rect(0, 800, W, 42).fill(NAVY);

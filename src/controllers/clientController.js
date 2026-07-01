@@ -1,8 +1,9 @@
 const Client = require('../models/Client');
 const Sale = require('../models/Sale');
-const {generateCreditPDF, generateClientPaymentReceiptPDF} = require('../utils/generateInvoicePDF')
+const {generateCreditPDF, generateClientPaymentReceiptPDF, generateClientHistoryPDF} = require('../utils/generateInvoicePDF')
 const ClientPayment = require('../models/ClientPayment');
 const SystemConfig  = require('../models/SystemConfig');
+
 
 const getClients = async (req, res) => {
   try {
@@ -190,36 +191,36 @@ const getClientHistory = async (req, res) => {
     const client = await Client.findById(req.params.id);
     if (!client) return res.status(404).json({ message: 'Client introuvable' });
 
-    // Toutes les ventes du client
     const sales = await Sale.find({ client: req.params.id })
       .sort({ createdAt: 1 })
       .populate('recordedBy', 'name');
 
-    // Tous les paiements du client
     const payments = await ClientPayment.find({ client: req.params.id })
       .sort({ createdAt: 1 })
       .populate('paidBy', 'name');
 
-    // Fusionner et trier par date
     const history = [
       ...sales.map(s => ({
         type:        'vente',
         date:        s.createdAt,
         reference:   s.saleNumber,
         montant:     s.totalAmount,
-        paye:        s.amountPaid,
-        reste:       s.remainingAmount,
+        // Acompte initial figé au moment de la vente
+        paye:        s.initialAmountPaid || 0,
+        // Reste initial = totalAmount - acompte initial
+        reste:       s.totalAmount - (s.initialAmountPaid || 0),
         paymentType: s.paymentType,
         status:      s.status,
         recordedBy:  s.recordedBy?.name || '—',
       })),
       ...payments.map(p => ({
-        type:       'paiement',
-        date:       p.createdAt,
-        reference:  `PAY-${p._id.toString().slice(-6).toUpperCase()}`,
-        montant:    p.amount,
-        reste:      p.remainingDebt,
-        paidBy:     p.paidBy?.name || '—',
+        type:      'paiement',
+        date:      p.createdAt,
+        reference: `PAY-${p._id.toString().slice(-6).toUpperCase()}`,
+        montant:   p.amount,
+        paye:      p.amount,
+        reste:     p.remainingDebt, // solde global après ce paiement
+        paidBy:    p.paidBy?.name || '—',
       }))
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -243,8 +244,8 @@ const downloadClientRelevePDF = async (req, res) => {
         date:      s.createdAt,
         reference: s.saleNumber,
         montant:   s.totalAmount,
-        paye:      s.amountPaid,
-        reste:     s.remainingAmount,
+        paye:      s.initialAmountPaid || 0,
+        reste:     s.totalAmount - (s.initialAmountPaid || 0),
         status:    s.status
       })),
       ...payments.map(p => ({
@@ -256,7 +257,6 @@ const downloadClientRelevePDF = async (req, res) => {
       }))
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const { generateClientHistoryPDF } = require('../utils/generateInvoicePDF');
     await generateClientHistoryPDF(client, history, res);
   } catch (error) {
     res.status(500).json({ message: error.message });

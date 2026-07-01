@@ -43,8 +43,20 @@ const getDailyReport = async (req, res) => {
       .filter(s => s.paymentType === 'credit')
       .reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
 
-    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+      
+      const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+      
+      const totalCreditRembourses = await ClientPayment.find()
+        .then(payments => payments.reduce((sum, p) => sum + p.amount, 0));
+          
+      // Crédits remboursés aujourd'hui
+      const paymentsToday = await ClientPayment.find({
+        createdAt: { $gte: start, $lte: end }
+      });
 
+      const creditRembourseToday =  paymentsToday
+        .reduce((sum, p) => sum + p.amount, 0);
+      
     res.json({
       date: start,
       totalSales,
@@ -53,6 +65,8 @@ const getDailyReport = async (req, res) => {
       totalEncaisse,
       totalCredit,
       totalExpenses,
+      totalCreditRembourses,
+      creditRembourseToday,
       netProfit: totalEncaisse - totalExpenses,
       salesCount: sales.length,
       sales,
@@ -469,9 +483,11 @@ const getCaisseReport = async (req, res) => {
       clientPaymentsVirement,
       soldeCaisse,
       nbTransactions: sales.length,
+      comptantToday,
       encaisseAujourdhui,
       depensesAujourdhui,
       paiementsFournisseursToday,
+      clientPayTodayComptant,
       soldeAujourdhui: encaisseAujourdhui - depensesAujourdhui - paiementsFournisseursToday,
       nbTransactionsAujourdhui: salesToday.length,
       encaisseMois,
