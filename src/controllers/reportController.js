@@ -648,9 +648,314 @@ const getCapitalReport = async (req, res) => {
   }
 };
 
+const getCaisseMovements = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const dateFilter = startDate && endDate ? {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    } : null;
+
+    // Toutes les sources de mouvements caisse
+    const sales = await Sale.find(dateFilter ? { createdAt: dateFilter } : {});
+    const clientPayments = await ClientPayment.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: { $ne: 'virement' } } : { modePaiement: { $ne: 'virement' } }
+    );
+    const expenses = await Expense.find(
+      dateFilter ? { date: dateFilter } : {}
+    );
+    const supplierExpenses = await SupplierExpense.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: 'comptant' } : { modePaiement: 'comptant' }
+    );
+    const transferts = await BankTransfer.find(
+      dateFilter ? { createdAt: dateFilter } : {}
+    );
+    const cashIns = await CashIn.find(
+      dateFilter ? { createdAt: dateFilter } : {}
+    );
+
+    // Construire la liste des mouvements
+    const mouvements = [
+      // Ventes comptant → entrée
+      ...sales.filter(s => s.paymentType === 'comptant').map(s => ({
+        date:      s.createdAt,
+        type:      'entrée',
+        categorie: 'Vente comptant',
+        libelle:   `Vente ${s.saleNumber} — ${s.clientName}`,
+        montant:   s.amountPaid,
+      })),
+      // Acomptes initiaux sur ventes crédit → entrée
+      ...sales.filter(s => s.paymentType === 'credit' && (s.initialAmountPaid || 0) > 0).map(s => ({
+        date:      s.createdAt,
+        type:      'entrée',
+        categorie: 'Acompte crédit',
+        libelle:   `Acompte ${s.saleNumber} — ${s.clientName}`,
+        montant:   s.initialAmountPaid || 0,
+      })),
+      // Paiements de dettes clients comptant → entrée
+      ...clientPayments.map(p => ({
+        date:      p.createdAt,
+        type:      'entrée',
+        categorie: 'Remboursement crédit',
+        libelle:   `Paiement dette — ${p.clientName}`,
+        montant:   p.amount,
+      })),
+      // Transferts banque → caisse → entrée
+      ...transferts.filter(t => t.direction === 'banque_vers_caisse').map(t => ({
+        date:      t.createdAt,
+        type:      'entrée',
+        categorie: 'Transfert reçu',
+        libelle:   `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`,
+        montant:   t.amount,
+      })),
+      // Alimentations caisse → entrée
+      ...cashIns.map(c => ({
+        date:      c.createdAt,
+        type:      'entrée',
+        categorie: 'Alimentation',
+        libelle:   `${c.reason}${c.note ? ' — ' + c.note : ''}`,
+        montant:   c.amount,
+      })),
+      // Dépenses opérationnelles → sortie
+      ...expenses.map(e => ({
+        date:      e.date || e.createdAt,
+        type:      'sortie',
+        categorie: 'Dépense',
+        libelle:   e.title,
+        montant:   e.amount,
+      })),
+      // Paiements fournisseurs comptant → sortie
+      ...supplierExpenses.map(e => ({
+        date:      e.createdAt,
+        type:      'sortie',
+        categorie: 'Paiement fournisseur',
+        libelle:   `${e.title} — ${e.supplierName}`,
+        montant:   e.amount,
+      })),
+      // Transferts caisse → banque → sortie
+      ...transferts.filter(t => t.direction === 'caisse_vers_banque').map(t => ({
+        date:      t.createdAt,
+        type:      'sortie',
+        categorie: 'Transfert envoyé',
+        libelle:   `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`,
+        montant:   t.amount,
+      })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const totalEntrees = mouvements.filter(m => m.type === 'entrée').reduce((sum, m) => sum + m.montant, 0);
+    const totalSorties = mouvements.filter(m => m.type === 'sortie').reduce((sum, m) => sum + m.montant, 0);
+    const solde = totalEntrees - totalSorties;
+
+    res.json({ mouvements, totalEntrees, totalSorties, solde });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getBankMovements = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const dateFilter = startDate && endDate ? {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    } : null;
+
+    const sales = await Sale.find(dateFilter ? { createdAt: dateFilter } : {});
+    const clientPayments = await ClientPayment.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: 'virement' } : { modePaiement: 'virement' }
+    );
+    const supplierExpenses = await SupplierExpense.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: 'virement' } : { modePaiement: 'virement' }
+    );
+    const transferts = await BankTransfer.find(
+      dateFilter ? { createdAt: dateFilter } : {}
+    );
+    const bankIns = await BankIn.find(
+      dateFilter ? { createdAt: dateFilter } : {}
+    );
+
+    const mouvements = [
+      // Ventes virement → entrée
+      ...sales.filter(s => s.paymentType === 'virement').map(s => ({
+        date:      s.createdAt,
+        type:      'entrée',
+        categorie: 'Vente virement',
+        libelle:   `Vente ${s.saleNumber} — ${s.clientName}`,
+        montant:   s.amountPaid,
+      })),
+      // Paiements de dettes clients virement → entrée
+      ...clientPayments.map(p => ({
+        date:      p.createdAt,
+        type:      'entrée',
+        categorie: 'Remboursement crédit',
+        libelle:   `Paiement dette — ${p.clientName}`,
+        montant:   p.amount,
+      })),
+      // Transferts caisse → banque → entrée
+      ...transferts.filter(t => t.direction === 'caisse_vers_banque').map(t => ({
+        date:      t.createdAt,
+        type:      'entrée',
+        categorie: 'Transfert reçu',
+        libelle:   `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`,
+        montant:   t.amount,
+      })),
+      // Alimentations banque → entrée
+      ...bankIns.map(b => ({
+        date:      b.createdAt,
+        type:      'entrée',
+        categorie: 'Alimentation',
+        libelle:   `${b.reason}${b.note ? ' — ' + b.note : ''}`,
+        montant:   b.amount,
+      })),
+      // Paiements fournisseurs virement → sortie
+      ...supplierExpenses.map(e => ({
+        date:      e.createdAt,
+        type:      'sortie',
+        categorie: 'Paiement fournisseur',
+        libelle:   `${e.title} — ${e.supplierName}`,
+        montant:   e.amount,
+      })),
+      // Transferts banque → caisse → sortie
+      ...transferts.filter(t => t.direction === 'banque_vers_caisse').map(t => ({
+        date:      t.createdAt,
+        type:      'sortie',
+        categorie: 'Transfert envoyé',
+        libelle:   `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`,
+        montant:   t.amount,
+      })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const totalEntrees = mouvements.filter(m => m.type === 'entrée').reduce((sum, m) => sum + m.montant, 0);
+    const totalSorties = mouvements.filter(m => m.type === 'sortie').reduce((sum, m) => sum + m.montant, 0);
+    const solde = totalEntrees - totalSorties;
+
+    res.json({ mouvements, totalEntrees, totalSorties, solde });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const exportCaisseReport = async (req, res) => {
+  try {
+    const { format, startDate, endDate } = req.query;
+    const dateFilter = startDate && endDate ? {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    } : null;
+
+    // Réutilise la même logique que getCaisseMovements
+    const req2 = { query: { startDate, endDate } };
+    let mouvements = [], totalEntrees = 0, totalSorties = 0, solde = 0;
+
+    // ... (même calcul que getCaisseMovements)
+    // Pour éviter la duplication, appelle directement la logique
+    const sales = await Sale.find(dateFilter ? { createdAt: dateFilter } : {});
+    const clientPayments = await ClientPayment.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: { $ne: 'virement' } } : { modePaiement: { $ne: 'virement' } }
+    );
+    const expenses = await Expense.find(dateFilter ? { date: dateFilter } : {});
+    const supplierExpenses = await SupplierExpense.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: 'comptant' } : { modePaiement: 'comptant' }
+    );
+    const transferts = await BankTransfer.find(dateFilter ? { createdAt: dateFilter } : {});
+    const cashIns = await CashIn.find(dateFilter ? { createdAt: dateFilter } : {});
+    const config = await SystemConfig.findOne();
+
+    mouvements = [
+      ...sales.filter(s => s.paymentType === 'comptant').map(s => ({ date: s.createdAt, type: 'entrée', categorie: 'Vente comptant', libelle: `Vente ${s.saleNumber} — ${s.clientName}`, montant: s.amountPaid })),
+      ...sales.filter(s => s.paymentType === 'credit' && (s.initialAmountPaid || 0) > 0).map(s => ({ date: s.createdAt, type: 'entrée', categorie: 'Acompte crédit', libelle: `Acompte ${s.saleNumber} — ${s.clientName}`, montant: s.initialAmountPaid || 0 })),
+      ...clientPayments.map(p => ({ date: p.createdAt, type: 'entrée', categorie: 'Remboursement crédit', libelle: `Paiement dette — ${p.clientName}`, montant: p.amount })),
+      ...transferts.filter(t => t.direction === 'banque_vers_caisse').map(t => ({ date: t.createdAt, type: 'entrée', categorie: 'Transfert reçu', libelle: `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
+      ...cashIns.map(c => ({ date: c.createdAt, type: 'entrée', categorie: 'Alimentation', libelle: `${c.reason}${c.note ? ' — ' + c.note : ''}`, montant: c.amount })),
+      ...expenses.map(e => ({ date: e.date || e.createdAt, type: 'sortie', categorie: 'Dépense', libelle: e.title, montant: e.amount })),
+      ...supplierExpenses.map(e => ({ date: e.createdAt, type: 'sortie', categorie: 'Paiement fournisseur', libelle: `${e.title} — ${e.supplierName}`, montant: e.amount })),
+      ...transferts.filter(t => t.direction === 'caisse_vers_banque').map(t => ({ date: t.createdAt, type: 'sortie', categorie: 'Transfert envoyé', libelle: `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    totalEntrees = mouvements.filter(m => m.type === 'entrée').reduce((sum, m) => sum + m.montant, 0);
+    totalSorties = mouvements.filter(m => m.type === 'sortie').reduce((sum, m) => sum + m.montant, 0);
+    solde = totalEntrees - totalSorties;
+
+    const title   = 'Rapport des Mouvements Caisse';
+    const headers = ['Date', 'Type', 'Catégorie', 'Libellé', 'Montant'];
+    const rows    = mouvements.map(m => [
+      new Date(m.date).toLocaleDateString('fr-FR'),
+      m.type === 'entrée' ? '↑ Entrée' : '↓ Sortie',
+      m.categorie,
+      m.libelle,
+      `${formatAmount(m.montant)} GNF`
+    ]);
+    const totals = [
+      { label: 'Total entrées',  value: `${formatAmount(totalEntrees)} GNF`, highlight: false },
+      { label: 'Total sorties',  value: `${formatAmount(totalSorties)} GNF`, highlight: false },
+      { label: 'Solde caisse',   value: `${formatAmount(solde)} GNF`,        highlight: true  },
+    ];
+
+    if (format === 'pdf') return await exportPDF(title, headers, rows, res, 'rapport-caisse', totals, config);
+    if (format === 'csv') return await exportCSV(headers, rows, res, 'rapport-caisse');
+
+    res.status(400).json({ message: 'Format invalide' });
+  } catch (error) { res.status(500).json({ message: error.message }); }
+};
+
+const exportBankReport = async (req, res) => {
+  try {
+    const { format, startDate, endDate } = req.query;
+    const dateFilter = startDate && endDate ? {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    } : null;
+
+    const sales = await Sale.find(dateFilter ? { createdAt: dateFilter } : {});
+    const clientPayments = await ClientPayment.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: 'virement' } : { modePaiement: 'virement' }
+    );
+    const supplierExpenses = await SupplierExpense.find(
+      dateFilter ? { createdAt: dateFilter, modePaiement: 'virement' } : { modePaiement: 'virement' }
+    );
+    const transferts = await BankTransfer.find(dateFilter ? { createdAt: dateFilter } : {});
+    const bankIns = await BankIn.find(dateFilter ? { createdAt: dateFilter } : {});
+    const config = await SystemConfig.findOne();
+
+    const mouvements = [
+      ...sales.filter(s => s.paymentType === 'virement').map(s => ({ date: s.createdAt, type: 'entrée', categorie: 'Vente virement', libelle: `Vente ${s.saleNumber} — ${s.clientName}`, montant: s.amountPaid })),
+      ...clientPayments.map(p => ({ date: p.createdAt, type: 'entrée', categorie: 'Remboursement crédit', libelle: `Paiement dette — ${p.clientName}`, montant: p.amount })),
+      ...transferts.filter(t => t.direction === 'caisse_vers_banque').map(t => ({ date: t.createdAt, type: 'entrée', categorie: 'Transfert reçu', libelle: `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
+      ...bankIns.map(b => ({ date: b.createdAt, type: 'entrée', categorie: 'Alimentation', libelle: `${b.reason}${b.note ? ' — ' + b.note : ''}`, montant: b.amount })),
+      ...supplierExpenses.map(e => ({ date: e.createdAt, type: 'sortie', categorie: 'Paiement fournisseur', libelle: `${e.title} — ${e.supplierName}`, montant: e.amount })),
+      ...transferts.filter(t => t.direction === 'banque_vers_caisse').map(t => ({ date: t.createdAt, type: 'sortie', categorie: 'Transfert envoyé', libelle: `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const totalEntrees = mouvements.filter(m => m.type === 'entrée').reduce((sum, m) => sum + m.montant, 0);
+    const totalSorties = mouvements.filter(m => m.type === 'sortie').reduce((sum, m) => sum + m.montant, 0);
+    const solde = totalEntrees - totalSorties;
+
+    const title   = 'Rapport des Mouvements Banque';
+    const headers = ['Date', 'Type', 'Catégorie', 'Libellé', 'Montant'];
+    const rows    = mouvements.map(m => [
+      new Date(m.date).toLocaleDateString('fr-FR'),
+      m.type === 'entrée' ? '↑ Entrée' : '↓ Sortie',
+      m.categorie,
+      m.libelle,
+      `${formatAmount(m.montant)} GNF`
+    ]);
+    const totals = [
+      { label: 'Total entrées', value: `${formatAmount(totalEntrees)} GNF`, highlight: false },
+      { label: 'Total sorties', value: `${formatAmount(totalSorties)} GNF`, highlight: false },
+      { label: 'Solde banque',  value: `${formatAmount(solde)} GNF`,        highlight: true  },
+    ];
+
+    if (format === 'pdf') return await exportPDF(title, headers, rows, res, 'rapport-banque', totals, config);
+    if (format === 'csv') return await exportCSV(headers, rows, res, 'rapport-banque');
+
+    res.status(400).json({ message: 'Format invalide' });
+  } catch (error) { res.status(500).json({ message: error.message }); }
+};
+
 module.exports = {
   getDailyReport, getMonthlyReport, getStockReport, getDebtReport,
   getSupplierReport, exportDailyReport, exportMonthlyReport,
   exportStockReport, exportDebtReport, exportSupplierReport,
-  getCaisseReport, getCapitalReport
+  getCaisseReport, getCapitalReport, getCaisseMovements, getBankMovements,
+  exportCaisseReport, exportBankReport
 };

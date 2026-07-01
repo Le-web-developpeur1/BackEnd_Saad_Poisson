@@ -3,8 +3,9 @@ const router = express.Router();
 const {
   getDailyReport, getMonthlyReport, getStockReport, getDebtReport, getSupplierReport,
   exportDailyReport, exportMonthlyReport, exportStockReport, exportDebtReport, 
-  exportSupplierReport, getCaisseReport,
-  getCapitalReport,
+  exportSupplierReport, getCaisseReport,getCapitalReport,getCaisseMovements,getBankMovements,
+  exportCaisseReport,
+  exportBankReport,
 } = require('../controllers/reportController');
 const { protect, adminOrGestionnaire } = require('../middlewares/authMiddleware');
 
@@ -23,5 +24,11 @@ router.get('/debts/export', exportDebtReport);
 router.get('/suppliers/export', exportSupplierReport);
 router.get('/caisse', getCaisseReport);
 router.get('/capital', getCapitalReport);
+
+router.get('/caisse-movements', getCaisseMovements);
+router.get('/bank-movements', getBankMovements);
+router.get('/export/caisse', exportCaisseReport);
+router.get('/export/banque', exportBankReport);
+
 
 module.exports = router;
