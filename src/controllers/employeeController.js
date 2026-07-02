@@ -73,7 +73,7 @@ const deleteEmployee = async (req, res) => {
   try {
     const employee = await Employee.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
     if (!employee) return res.status(404).json({ message: 'Employé introuvable' });
-    res.json({ message: 'Employé désactivé' });
+    res.json({ message: 'Employé supprimé avec succès' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

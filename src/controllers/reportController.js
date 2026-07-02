@@ -396,6 +396,18 @@ const getCaisseReport = async (req, res) => {
 
     const clientsWithDebt = await Client.find({ isActive: true, currentDebt: { $gt: 0 } });
     const totalCredit     = clientsWithDebt.reduce((sum, c) => sum + c.currentDebt, 0);
+    //Crédit du jour
+    const startToday = new Date(new Date().setHours(0, 0, 0, 0));
+    const endToday   = new Date(new Date().setHours(23, 59, 59, 999));
+
+    const clients = await Client.find({ isActive: true });
+
+    const totalCreditToday = clients.reduce((sum, c) => {
+      const debtsToday = c.debtHistory.filter(
+        d => d.date >= startToday && d.date <= endToday
+      );
+      return sum + debtsToday.reduce((s, d) => s + d.amount, 0);
+    }, 0);
 
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
@@ -419,9 +431,6 @@ const getCaisseReport = async (req, res) => {
                        - depensesComptant - paiementsFournisseursComptant + totalCashIns;
 
     // ── Aujourd'hui ───────────────────────────────────
-    const startToday = new Date(new Date().setHours(0, 0, 0, 0));
-    const endToday   = new Date(new Date().setHours(23, 59, 59, 999));
-
     const salesToday          = await Sale.find({ createdAt: { $gte: startToday, $lte: endToday } });
     const clientPayToday      = await ClientPayment.find({ createdAt: { $gte: startToday, $lte: endToday } });
     const expensesToday       = await Expense.find({ date: { $gte: startToday, $lte: endToday } });
@@ -504,7 +513,8 @@ const getCaisseReport = async (req, res) => {
       nbTransactionsMois: salesMonth.length,
       sales,
       expenses,
-      totalCashIns
+      totalCashIns,
+      totalCreditToday
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

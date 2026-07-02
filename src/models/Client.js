@@ -31,7 +31,13 @@ const clientSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
-  }
+  },
+  debtHistory: [
+    {
+      amount: { type: Number, required: true},
+      date: { type: Date, default: Date.now},
+    }
+  ]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Client', clientSchema);

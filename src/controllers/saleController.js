@@ -141,7 +141,9 @@ const createSale = async (req, res) => {
 
     if (clientId && paymentType === 'credit') {
       const client = await Client.findById(clientId);
-      client.currentDebt += totalAmount - paid;
+      const montant = totalAmount - paid;
+      client.currentDebt += montant;
+      client.debtHistory.push({ amount: montant, date: new Date() });
       client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
       await client.save();
     }
