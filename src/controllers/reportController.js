@@ -165,6 +165,9 @@ const exportDailyReport = async (req, res) => {
     const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
     const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+    const totalCartonsVendus = sales.reduce((sum, s) => {
+      return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
+    }, 0);
 
     const benefice = totalEncaisse - totalDepenses;
 
@@ -180,6 +183,7 @@ const exportDailyReport = async (req, res) => {
     ]);
 
     const totals = [
+      { label: 'Cartons vendus', value: String(totalCartonsVendus), highlight: false },
       { label: 'Total ventes',   value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
       { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
       { label: 'Crédits en cours', value: `${formatAmount(totalCredit)} GNF`, highlight: false },

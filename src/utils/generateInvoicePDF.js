@@ -258,7 +258,7 @@ const generateInvoicePDF = async (invoice, res) => {
       .text('CONDITIONS DE PAIEMENT :', 28, condY);
     doc.moveTo(28, condY + 18).lineTo(255, condY + 18)
       .lineWidth(0.5).dash(2, { space: 2 }).stroke('#AAAAAA');
-    doc.fontSize(9).font('Helvetica').fillColor('#333333').undash()
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333').undash()
       .text(invoice.paymentConditions || '', 28, condY + 22);
 
     doc.moveTo(270, sepY + 5).lineTo(270, footerY - 12)
