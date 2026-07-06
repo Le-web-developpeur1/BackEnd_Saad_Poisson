@@ -121,7 +121,10 @@ const getStockReport = async (req, res) => {
       sum + (p.stockCartons * (p.purchasePricePerCarton || 0)), 0
     );
 
-    res.json({ products, lowStock, movements, valeurStockAchat, valeurStockVente });
+    //Nombre total de cartons restant
+    const totalCartons = products.reduce((sum, p) => sum + p.stockCartons, 0);
+
+    res.json({ products, lowStock, movements, valeurStockAchat, valeurStockVente, totalCartons });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
