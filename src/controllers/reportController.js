@@ -58,6 +58,10 @@ const getDailyReport = async (req, res) => {
 
       const creditRembourseToday =  paymentsToday
         .reduce((sum, p) => sum + p.amount, 0);
+
+        const totalCartonsVendus = sales.reduce((sum, s) => {
+          return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
+        }, 0);
       
     res.json({
       date: start,
@@ -72,7 +76,8 @@ const getDailyReport = async (req, res) => {
       netProfit: totalEncaisse - totalExpenses,
       salesCount: sales.length,
       sales,
-      expenses
+      expenses,
+      totalCartonsVendus
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -183,12 +188,12 @@ const exportDailyReport = async (req, res) => {
     ]);
 
     const totals = [
-      { label: 'Cartons vendus', value: String(totalCartonsVendus), highlight: false },
-      { label: 'Total ventes',   value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
-      { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
-      { label: 'Crédits en cours', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
-      { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
-      { label: 'Total disponible',   value: `${formatAmount(benefice)} GNF`,      highlight: true  },
+      { label: 'Cartons vendus',    value: String(totalCartonsVendus),          highlight: false },
+      { label: 'Total ventes',      value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
+      { label: 'Total encaissé',    value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
+      { label: 'Crédits en cours',  value: `${formatAmount(totalCredit)} GNF`,   highlight: false },
+      { label: 'Total dépenses',    value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
+      { label: 'Total disponible',  value: `${formatAmount(benefice)} GNF`,      highlight: true  },
     ];
 
     const fname = `rapport-journalier-${start.toISOString().split('T')[0]}`;
