@@ -651,199 +651,721 @@ const generateClientHistoryPDF = async (client, history, res) => {
   let config = await SystemConfig.findOne();
   if (!config) config = await SystemConfig.create({});
 
-  const doc = new PDFDocument({ size: 'A4', margin: 0 });
+  const doc = new PDFDocument({
+    size: 'A4',
+    margin: 0
+  });
+
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=Historique-${client.name}.pdf`);
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename=Historique-${client.name}.pdf`
+  );
+
   doc.pipe(res);
 
   try {
-    const NAVY  = '#1A2B5F';
-    const GOLD  = '#D4A017';
-    const LIGHT = '#EBF5FB';
-    const W     = 595;
+    // ============================
+    // COULEURS
+    // ============================
+    const PRIMARY = '#2E75B6';
+    const SECONDARY = '#5B9BD5';
+    const LIGHT = '#D9EAF7';
+    const HEADER_BG = '#FFFFFF';
+    const GOLD = '#F2B233';
+    const BORDER = '#D9D9D9';
+    const TEXT = '#333333';
+    const SUCCESS = '#2E8B57';
+    const DANGER = '#C0392B';
 
-    // ── EN-TÊTE ───────────────────────────────────────
-    doc.rect(0, 0, W, 100).fill(NAVY);
+    const PAGE_WIDTH = 595;
 
+    // =====================================
+    // EN-TÊTE
+    // =====================================
+
+    doc.rect(0, 0, PAGE_WIDTH, 95).fill(HEADER_BG);
+
+    // Ligne de séparation
+    doc.moveTo(20, 95)
+      .lineTo(PAGE_WIDTH - 20, 95)
+      .lineWidth(1)
+      .stroke(GOLD);
+
+    // Logo
     if (config.logo) {
       try {
         if (config.logo.startsWith('data:')) {
-          const buffer = Buffer.from(config.logo.split(',')[1], 'base64');
-          doc.image(buffer, 20, 12, { width: 70, height: 70 });
+          const buffer = Buffer.from(
+            config.logo.split(',')[1],
+            'base64'
+          );
+
+          doc.image(buffer, 25, 15, {
+            width: 58,
+            height: 58
+          });
         }
       } catch (e) {}
     }
 
-    doc.fontSize(18).font('Helvetica-Bold').fillColor('#FFFFFF')
-      .text(config.establishmentName || 'S.A.D POISSON', 105, 20);
-    doc.fontSize(9).fillColor(GOLD)
-      .text(config.establishmentSubtitle || '', 105, 44);
-    doc.fontSize(8).fillColor('#CCCCCC')
-      .text(`${config.address || ''} | Tél: ${config.phone1 || ''}`, 105, 60);
-    doc.fontSize(8).fillColor('#CCCCCC')
-      .text(`Édité le : ${new Date().toLocaleDateString('fr-FR')}`, 400, 40, { align: 'right', width: 165 });
-
-    // ── TITRE ─────────────────────────────────────────
-    doc.rect(0, 100, W, 36).fill('#F8FAFC');
-    doc.fontSize(15).font('Helvetica-Bold').fillColor(NAVY)
-      .text('RELEVÉ HISTORIQUE CLIENT', 30, 112);
-    doc.moveTo(30, 136).lineTo(W - 30, 136).lineWidth(1.5).stroke(GOLD);
-
-    // ── INFOS CLIENT ──────────────────────────────────
-    let y = 152;
-    doc.roundedRect(30, y, 535, 70, 6).lineWidth(1).stroke(NAVY);
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('INFORMATIONS CLIENT', 42, y + 10);
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Nom : ${client.name}`,              42, y + 26)
-      .text(`Téléphone : ${client.phone || '—'}`, 42, y + 40)
-      .text(`Adresse : ${client.address || '—'}`, 42, y + 54);
-
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Dette actuelle : `, 320, y + 26);
-    doc.font('Helvetica-Bold').fillColor(client.currentDebt > 0 ? '#e53e3e' : '#16a34a')
-      .text(`${formatAmount(client.currentDebt)} GNF`, 320, y + 26, { align: 'right', width: 229 });
-
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Plafond crédit : `, 320, y + 40);
-    doc.font('Helvetica-Bold').fillColor(NAVY)
-      .text(`${formatAmount(client.creditLimit)} GNF`, 320, y + 40, { align: 'right', width: 229 });
-
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Statut : `, 320, y + 54);
-    doc.font('Helvetica-Bold').fillColor(client.isBlocked ? '#e53e3e' : '#16a34a')
-      .text(client.isBlocked ? 'BLOQUÉ' : 'ACTIF', 320, y + 54, { align: 'right', width: 229 });
-
-    // ── TABLEAU HISTORIQUE ────────────────────────────
-    y += 90;
-    const colX = { date: 30, type: 110, ref: 185, montant: 295, paye: 375, reste: 460 };
-
-    // En-tête tableau
-    doc.rect(30, y, 535, 24).fill(NAVY);
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF');
-    doc.text('Date',       colX.date + 4,    y + 8);
-    doc.text('Type',       colX.type + 4,    y + 8);
-    doc.text('Référence',  colX.ref + 4,     y + 8);
-    doc.text('Montant',    colX.montant + 4, y + 8);
-    doc.text('Payé',       colX.paye + 4,    y + 8);
-    doc.text('Reste',      colX.reste + 4,   y + 8);
-
-    const tableStartY = y;
-    y += 24;
-    const rowH = 22;
-
-    history.forEach((item, i) => {
-      // Nouvelle page si nécessaire
-      if (y + rowH > 760) {
-        doc.addPage();
-        y = 30;
-        doc.rect(30, y, 535, 24).fill(NAVY);
-        doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF');
-        doc.text('Date',      colX.date + 4,    y + 8);
-        doc.text('Type',      colX.type + 4,    y + 8);
-        doc.text('Référence', colX.ref + 4,     y + 8);
-        doc.text('Montant',   colX.montant + 4, y + 8);
-        doc.text('Payé',      colX.paye + 4,    y + 8);
-        doc.text('Reste',     colX.reste + 4,   y + 8);
-        y += 24;
-      }
-
-      const bg = i % 2 === 0 ? '#FFFFFF' : LIGHT;
-      doc.rect(30, y, 535, rowH).fill(bg);
-      doc.fontSize(8).font('Helvetica').fillColor('#222');
-
-      // Date
-      doc.text(
-        new Date(item.date).toLocaleDateString('fr-FR'),
-        colX.date + 4, y + 7
+    // Nom établissement
+    doc.font('Helvetica-Bold')
+      .fontSize(18)
+      .fillColor(PRIMARY)
+      .text(
+        config.establishmentName || 'S.A.D POISSON',
+        95,
+        18
       );
 
-      // Type avec couleur
-      doc.font('Helvetica-Bold')
-        .fillColor(item.type === 'vente' ? '#1A2B5F' : '#16a34a')
-        .text(item.type === 'vente' ? 'VENTE' : 'PAIEMENT', colX.type + 4, y + 7);
+    // Sous titre
+    doc.font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(GOLD)
+      .text(
+        config.establishmentSubtitle || '',
+        95,
+        42
+      );
 
-      // Référence
-      doc.font('Helvetica').fillColor('#555')
-        .text(item.reference || '—', colX.ref + 4, y + 7, { width: 100 });
+    // Adresse
+    doc.font('Helvetica')
+      .fontSize(8)
+      .fillColor(TEXT)
+      .text(
+        `${config.address ||  ''}`,
+        95,
+        58
+      );
 
-      // Montant
-      doc.fillColor('#222')
-        .text(`${formatAmount(item.montant)} GNF`, colX.montant + 4, y + 7);
+    doc.text(
+      `Tel : ${config.phone1} - ${config.phone2}`,
+      95,
+        70
+    );
+    doc.text(
+      `Email : ${config.email || ''} `,
+      95,
+      82
+    );
 
-      // Payé
-      if (item.type === 'vente') {
-        // Pour une vente → affiche l'acompte initial uniquement
-        const paye = item.paye || 0;
-        doc.fillColor(paye > 0 ? '#16a34a' : '#999')
-          .text(`${formatAmount(paye)} GNF`, colX.paye + 4, y + 7);
-      } else {
-        // Pour un paiement → affiche le montant payé
-        doc.fillColor('#16a34a').font('Helvetica-Bold')
-          .text(`${formatAmount(item.montant)} GNF`, colX.paye + 4, y + 7);
-      }
+    // Date impression
+    doc.font('Helvetica')
+      .fontSize(8)
+      .fillColor('#666666')
+      .text(
+        `Édité le : ${new Date().toLocaleDateString('fr-FR')}`,
+        380,
+        20,
+        {
+          width: 180,
+          align: 'right'
+        }
+      );
 
-      // Reste
-      if (item.type === 'vente') {
-        // Pour une vente → reste = totalAmount - acompte initial
-        const reste = item.reste || 0;
-        doc.font('Helvetica-Bold')
-          .fillColor(reste > 0 ? '#e53e3e' : '#16a34a')
-          .text(`${formatAmount(reste)} GNF`, colX.reste + 4, y + 7);
-      } else {
-        // Pour un paiement → solde global du client après ce paiement
-        doc.font('Helvetica-Bold').fillColor('#e53e3e')
-          .text(`${formatAmount(item.reste || 0)} GNF`, colX.reste + 4, y + 7);
-      }
+    // =====================================
+    // TITRE
+    // =====================================
 
-      y += rowH;
+    doc.font('Helvetica-Bold')
+      .fontSize(17)
+      .fillColor('#222222')
+      .text(
+        'RAPPORT HISTORIQUE CLIENT',
+        25,
+        110
+      );
+
+    doc.font('Helvetica')
+      .fontSize(8)
+      .fillColor('#777777')
+      .text(
+        `Généré le : ${new Date().toLocaleString('fr-FR')}`,
+        25,
+        130
+      );
+
+    doc.moveTo(25, 145)
+      .lineTo(PAGE_WIDTH - 25, 145)
+      .lineWidth(1)
+      .stroke(GOLD);
+
+    // =====================================
+    // INFORMATIONS CLIENT
+    // =====================================
+
+    let y = 160;
+
+    doc.roundedRect(
+        25,
+        y,
+        545,
+        78,
+        4
+      )
+      .lineWidth(0.8)
+      .stroke(BORDER);
+
+    doc.rect(
+        25,
+        y,
+        545,
+        22
+      )
+      .fill(LIGHT);
+
+    doc.font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(PRIMARY)
+      .text(
+        'INFORMATIONS CLIENT',
+        40,
+        y + 7
+      );
+
+    y += 30;
+
+    doc.font('Helvetica')
+      .fontSize(9)
+      .fillColor(TEXT);
+
+    doc.text(
+      `Nom : ${client.name}`,
+      40,
+      y
+    );
+
+    doc.text(
+      `Téléphone : ${client.phone || '—'}`,
+      40,
+      y + 16
+    );
+
+    doc.text(
+      `Adresse : ${client.address || '—'}`,
+      40,
+      y + 32
+    );
+
+    // Colonne droite
+
+    doc.fillColor(TEXT)
+      .text(
+        'Dette actuelle :',
+        320,
+        y
+      );
+
+    doc.font('Helvetica-Bold')
+      .fillColor(
+        client.currentDebt > 0
+          ? DANGER
+          : SUCCESS
+      )
+      .text(
+        `${formatAmount(client.currentDebt)} GNF`,
+        320,
+        y,
+        {
+          width: 220,
+          align: 'right'
+        }
+      );
+
+    doc.font('Helvetica')
+      .fillColor(TEXT)
+      .text(
+        'Plafond crédit :',
+        320,
+        y + 16
+      );
+
+    doc.font('Helvetica-Bold')
+      .fillColor(PRIMARY)
+      .text(
+        `${formatAmount(client.creditLimit)} GNF`,
+        320,
+        y + 16,
+        {
+          width: 220,
+          align: 'right'
+        }
+      );
+
+    doc.font('Helvetica')
+      .fillColor(TEXT)
+      .text(
+        'Statut :',
+        320,
+        y + 32
+      );
+
+    doc.font('Helvetica-Bold')
+      .fillColor(
+        client.isBlocked
+          ? DANGER
+          : SUCCESS
+      )
+      .text(
+        client.isBlocked
+          ? 'BLOQUÉ'
+          : 'ACTIF',
+        320,
+        y + 32,
+        {
+          width: 220,
+          align: 'right'
+        }
+      );
+
+    // ==========================
+    // Début du tableau
+    // ==========================
+
+    y += 70;
+
+    const colX = {
+      date: 30,
+      type: 90,
+      ref: 170,
+      montant: 250,
+      paye: 350,
+      reste: 450
+    };
+        // =====================================
+    // TABLEAU HISTORIQUE
+    // =====================================
+
+    const tableStartY = y;
+    const rowHeight = 24;
+
+    // Largeur des colonnes
+    const colW = {
+      date: 80,
+      type: 75,
+      ref: 110,
+      montant: 95,
+      paye: 95,
+      reste: 95
+    };
+
+    // En-tête
+    doc.roundedRect(25, y, 545, 26, 2)
+      .fill(PRIMARY);
+
+    doc.font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor('#FFFFFF');
+
+    doc.text('DATE', colX.date + 5, y + 8, { width: colW.date });
+    doc.text('TYPE', colX.type + 5, y + 8, { width: colW.type });
+    doc.text('RÉFÉRENCE', colX.ref + 5, y + 8, { width: colW.ref });
+    doc.text('MONTANT', colX.montant + 5, y + 8, {
+      width: colW.montant,
+      align: 'right'
+    });
+    doc.text('PAYÉ', colX.paye + 5, y + 8, {
+      width: colW.paye,
+      align: 'right'
+    });
+    doc.text('RESTE', colX.reste + 5, y + 8, {
+      width: colW.reste,
+      align: 'right'
     });
 
-    // Bordure du tableau
-    doc.rect(30, tableStartY, 535, y - tableStartY).lineWidth(0.8).stroke(NAVY);
+    y += 26;
 
-    // ── RÉSUMÉ FINAL ──────────────────────────────────
-    y += 16;
+    // =========================
+    // Lignes du tableau
+    // =========================
 
-    const totalVentes    = history
-      .filter(h => h.type === 'vente')
-      .reduce((sum, h) => sum + h.montant, 0);
+    history.forEach((item, index) => {
 
-    const resteTotal = client.currentDebt; // dette actuelle du client
-    const totalPaiements = totalVentes - resteTotal;     // paiements ultérieurs
+      // Nouvelle page
+      if (y + rowHeight > 760) {
 
-    const resumeH = 80; // hauteur du bloc résumé
-    doc.rect(30, y, 535, resumeH).fill('#F8FAFC');
-    doc.rect(30, y, 535, resumeH).lineWidth(0.8).stroke(NAVY);
+        doc.addPage();
 
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY)
-      .text('RÉSUMÉ', 42, y + 10);
+        y = 40;
 
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Total Ventes :`, 42, y + 26);
-    doc.font('Helvetica-Bold').fillColor('#222')
-      .text(`${formatAmount(totalVentes)} GNF`, 42, y + 26, { align: 'right', width: 493 });
+        doc.roundedRect(25, y, 545, 26, 2)
+          .fill(PRIMARY);
 
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Total paiements reçus :`, 42, y + 42);
-    doc.font('Helvetica-Bold').fillColor('#16a34a')
-      .text(`${formatAmount(totalPaiements)} GNF`, 42, y + 42, { align: 'right', width: 493 });
+        doc.font('Helvetica-Bold')
+          .fontSize(8)
+          .fillColor('#FFFFFF');
 
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
-      .text(`Reste dû :`, 42, y + 58);
-    doc.font('Helvetica-Bold').fillColor(resteTotal > 0 ? '#e53e3e' : '#16a34a')
-      .text(`${formatAmount(resteTotal)} GNF`, 42, y + 58, { align: 'right', width: 493 });
+        doc.text('DATE', colX.date + 5, y + 8);
+        doc.text('TYPE', colX.type + 5, y + 8);
+        doc.text('RÉFÉRENCE', colX.ref + 5, y + 8);
+        doc.text('MONTANT', colX.montant + 5, y + 8, {
+          width: colW.montant,
+          align: 'right'
+        });
+        doc.text('PAYÉ', colX.paye + 5, y + 8, {
+          width: colW.paye,
+          align: 'right'
+        });
+        doc.text('RESTE', colX.reste + 5, y + 8, {
+          width: colW.reste,
+          align: 'right'
+        });
 
-    // ── PIED DE PAGE ──────────────────────────────────
-    doc.rect(0, 800, W, 42).fill(NAVY);
-    doc.fontSize(9).font('Helvetica-BoldOblique').fillColor(GOLD)
-      .text(config.invoiceFooter || 'Merci pour votre confiance !', 0, 816, { align: 'center', width: W });
+        y += 26;
+      }
+
+      // Fond alterné
+      doc.rect(25, y, 545, rowHeight)
+        .fill(index % 2 === 0 ? '#FFFFFF' : '#F7FBFE');
+
+      // Ligne de séparation
+      doc.moveTo(25, y + rowHeight)
+        .lineTo(570, y + rowHeight)
+        .lineWidth(0.4)
+        .stroke(BORDER);
+
+      // =========================
+      // DATE
+      // =========================
+
+      doc.font('Helvetica')
+        .fontSize(8)
+        .fillColor(TEXT)
+        .text(
+          new Date(item.date).toLocaleDateString('fr-FR'),
+          colX.date + 5,
+          y + 8,
+          {
+            width: colW.date
+          }
+        );
+
+      // =========================
+      // TYPE
+      // =========================
+
+      const typeColor =
+        item.type === 'vente'
+          ? PRIMARY
+          : SUCCESS;
+
+      doc.font('Helvetica-Bold')
+        .fillColor(typeColor)
+        .text(
+          item.type === 'vente'
+            ? 'VENTE'
+            : 'PAIEMENT',
+          colX.type + 5,
+          y + 8,
+          {
+            width: colW.type
+          }
+        );
+
+      // =========================
+      // REFERENCE
+      // =========================
+
+      doc.font('Helvetica')
+        .fillColor('#555555')
+        .text(
+          item.reference || '—',
+          colX.ref + 5,
+          y + 8,
+          {
+            width: colW.ref
+          }
+        );
+
+      // =========================
+      // MONTANT
+      // =========================
+
+      doc.font('Helvetica-Bold')
+        .fillColor(TEXT)
+        .text(
+          `${formatAmount(item.montant)} GNF`,
+          colX.montant + 5,
+          y + 8,
+          {
+            width: colW.montant,
+            align: 'right'
+          }
+        );
+
+      // =========================
+      // PAYÉ
+      // =========================
+
+      let montantPaye = 0;
+
+      if (item.type === 'vente') {
+        montantPaye = item.paye || 0;
+      } else {
+        montantPaye = item.montant;
+      }
+
+      doc.font('Helvetica-Bold')
+        .fillColor(
+          montantPaye > 0
+            ? SUCCESS
+            : '#888888'
+        )
+        .text(
+          `${formatAmount(montantPaye)} GNF`,
+          colX.paye + 5,
+          y + 8,
+          {
+            width: colW.paye,
+            align: 'right'
+          }
+        );
+
+      // =========================
+      // RESTE
+      // =========================
+
+      const reste =
+        item.type === 'vente'
+          ? item.reste || 0
+          : item.reste || 0;
+
+      doc.font('Helvetica-Bold')
+        .fillColor(
+          reste > 0
+            ? DANGER
+            : SUCCESS
+        )
+        .text(
+          `${formatAmount(reste)} GNF`,
+          colX.reste + 5,
+          y + 8,
+          {
+            width: colW.reste,
+            align: 'right'
+          }
+        );
+
+      y += rowHeight;
+
+    });
+
+    // Bordure générale
+
+    doc.roundedRect(
+      25,
+      tableStartY,
+      545,
+      y - tableStartY,
+      2
+    )
+    .lineWidth(0.8)
+    .stroke(BORDER);
+
+    y += 18;
+        // =====================================
+    // RÉSUMÉ
+    // =====================================
+
+    const totalVentes = history
+      .filter(item => item.type === 'vente')
+      .reduce((sum, item) => sum + item.montant, 0);
+
+    const resteTotal = client.currentDebt;
+    const totalPaiements = totalVentes - resteTotal;
+
+    const resumeY = y;
+
+    // Conteneur
+    doc.roundedRect(25, resumeY, 545, 95, 4)
+      .fill('#FFFFFF');
+
+    doc.roundedRect(25, resumeY, 545, 95, 4)
+      .lineWidth(0.8)
+      .stroke(BORDER);
+
+    // En-tête
+    doc.rect(25, resumeY, 545, 24)
+      .fill(LIGHT);
+
+    doc.font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(PRIMARY)
+      .text(
+        'RÉSUMÉ FINANCIER',
+        40,
+        resumeY + 8
+      );
+
+    const lineY = resumeY + 38;
+
+    // Total ventes
+    doc.font('Helvetica')
+      .fontSize(9)
+      .fillColor(TEXT)
+      .text(
+        'Total des ventes',
+        40,
+        lineY
+      );
+
+    doc.font('Helvetica-Bold')
+      .fillColor(PRIMARY)
+      .text(
+        `${formatAmount(totalVentes)} GNF`,
+        320,
+        lineY,
+        {
+          width: 220,
+          align: 'right'
+        }
+      );
+
+    // Paiements
+    doc.font('Helvetica')
+      .fillColor(TEXT)
+      .text(
+        'Total des paiements',
+        40,
+        lineY + 18
+      );
+
+    doc.font('Helvetica-Bold')
+      .fillColor(SUCCESS)
+      .text(
+        `${formatAmount(totalPaiements)} GNF`,
+        320,
+        lineY + 18,
+        {
+          width: 220,
+          align: 'right'
+        }
+      );
+
+    // Dette
+    doc.font('Helvetica')
+      .fillColor(TEXT)
+      .text(
+        'Dette restante',
+        40,
+        lineY + 36
+      );
+
+    doc.font('Helvetica-Bold')
+      .fillColor(
+        resteTotal > 0
+          ? DANGER
+          : SUCCESS
+      )
+      .text(
+        `${formatAmount(resteTotal)} GNF`,
+        320,
+        lineY + 36,
+        {
+          width: 220,
+          align: 'right'
+        }
+      );
+
+    y += 120;
+
+    // =====================================
+    // SIGNATURE
+    // =====================================
+
+    if (y + 80 < 770) {
+
+      doc.font('Helvetica')
+        .fontSize(8)
+        .fillColor('#777777')
+        .text(
+          'Responsable',
+          380,
+          y
+        );
+
+      doc.moveTo(350, y + 42)
+        .lineTo(545, y + 42)
+        .lineWidth(0.5)
+        .stroke('#AAAAAA');
+    }
+
+    // =====================================
+    // PIED DE PAGE
+    // =====================================
+
+    const footerY = 800;
+
+    doc.rect(
+      0,
+      footerY,
+      595,
+      42
+    )
+    .fill(LIGHT);
+
+    doc.moveTo(0, footerY)
+      .lineTo(595, footerY)
+      .lineWidth(1)
+      .stroke(GOLD);
+
+    doc.font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(PRIMARY)
+      .text(
+        config.invoiceFooter ||
+        'Merci pour votre confiance.',
+        0,
+        footerY + 9,
+        {
+          width: 595,
+          align: 'center'
+        }
+      );
+
+    doc.font('Helvetica')
+      .fontSize(7)
+      .fillColor('#666666')
+      .text(
+        `${config.establishmentName || ''}`,
+        0,
+        footerY + 23,
+        {
+          width: 595,
+          align: 'center'
+        }
+      );
+
+    // =====================================
+    // FIN
+    // =====================================
 
     doc.end();
+
   } catch (err) {
-    console.error('Erreur historique PDF:', err);
-    if (!res.headersSent) res.status(500).json({ message: 'Erreur génération PDF' });
-    try { doc.end(); } catch (e) {}
+
+    console.error(
+      'Erreur historique PDF :',
+      err
+    );
+
+    if (!res.headersSent) {
+
+      res.status(500).json({
+        message: 'Erreur génération PDF'
+      });
+
+    }
+
+    try {
+
+      doc.end();
+
+    } catch (e) {}
+
   }
+
 };
 
 // ── EXPORTS ───────────────────────────────────────────

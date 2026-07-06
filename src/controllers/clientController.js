@@ -135,7 +135,6 @@ const downloadCreditPDF = async (req, res) => {
       const client = await Client.findById(req.params.id);
       if (!client) return res.status(404).json({ message: 'Client introuvable' });
   
-      const Sale = require('../models/Sale');
       const sales = await Sale.find({
         client: req.params.id,
         paymentType: 'credit'
