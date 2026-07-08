@@ -4,15 +4,26 @@ const { createObjectCsvWriter } = require('csv-writer');
 const path = require('path');
 const fs   = require('fs');
 
-const NAVY = '#1A2B5F';
-const GOLD = '#D4A017';
+// ══════════════════════════════════════════════════════
+// NOUVELLES COULEURS (comme l'historique client)
+// ══════════════════════════════════════════════════════
+const NAVY = '#2E75B6'; // PRIMARY - Remplace l'ancien #1A2B5F
+const GOLD = '#F2B233'; // Nouveau GOLD - Remplace l'ancien #D4A017
 
 // ── EN-TÊTE PDF AVEC LOGO ─────────────────────────
 const drawHeader = async (doc, config, title) => {
   const W = 595;
 
-  // Fond bleu marine
-  doc.rect(0, 0, W, 100).fill(NAVY);
+  // ══════════════════════════════════════════════════════
+  // FOND BLANC (comme les autres PDF)
+  // ══════════════════════════════════════════════════════
+  doc.rect(0, 0, W, 95).fill('#FFFFFF');
+
+  // Ligne de séparation dorée
+  doc.moveTo(20, 95)
+    .lineTo(W - 20, 95)
+    .lineWidth(1)
+    .stroke(GOLD);
 
   // Logo à gauche
   if (config?.logo) {
@@ -20,7 +31,7 @@ const drawHeader = async (doc, config, title) => {
       if (config.logo.startsWith('data:')) {
         const base64Data = config.logo.split(',')[1];
         const buffer = Buffer.from(base64Data, 'base64');
-        doc.image(buffer, 20, 10, { width: 75, height: 75 });
+        doc.image(buffer, 25, 15, { width: 58, height: 58 });
       } else if (config.logo.startsWith('http')) {
         const https = require('https');
         await new Promise((resolve) => {
@@ -30,7 +41,7 @@ const drawHeader = async (doc, config, title) => {
             response.on('end', () => {
               try {
                 const buffer = Buffer.concat(chunks);
-                doc.image(buffer, 20, 10, { width: 75, height: 75 });
+                doc.image(buffer, 25, 15, { width: 58, height: 58 });
               } catch (e) {}
               resolve(null);
             });
@@ -39,33 +50,57 @@ const drawHeader = async (doc, config, title) => {
       } else {
         const logoPath = path.join(__dirname, '../../', config.logo.replace('src/', ''));
         if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 20, 10, { width: 75, height: 75 });
+          doc.image(logoPath, 25, 15, { width: 58, height: 58 });
         }
       }
     } catch (e) {}
   }
 
-  // Infos établissement à droite
-  doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF')
-    .text(config?.establishmentName || 'S.A.D POISSON', 110, 18);
-  doc.fontSize(9).font('Helvetica').fillColor(GOLD)
-    .text(config?.establishmentSubtitle || 'ENTREPRISE SAADE', 110, 40);
-  doc.fontSize(8).fillColor('#CCCCCC')
-    .text(config?.description || '', 110, 55);
-  doc.fontSize(8).fillColor('#CCCCCC')
-    .text(`${config?.address || ''} | Tél: ${config?.phone1 || ''}  -  ${config?.phone2 || ''}`, 110, 68);
-  doc.fontSize(8).fillColor('#CCCCCC')
-    .text(`Email: ${config?.email || ''}`, 110, 80);
+  // Nom de l'établissement
+  doc.fontSize(18).font('Helvetica-Bold').fillColor(NAVY)
+    .text(config?.establishmentName || 'S.A.D POISSON', 95, 18);
 
-  // Titre du rapport
-  doc.rect(0, 100, W, 42).fill('#F1F5F9');
-  doc.fontSize(16).font('Helvetica-Bold').fillColor(NAVY)
-    .text(title, 20, 112);
-  doc.fontSize(8).font('Helvetica').fillColor('#666666')
-    .text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 20, 130);
+  // Sous-titre de l'établissement
+  doc.fontSize(10).font('Helvetica-Bold').fillColor(GOLD)
+    .text(config?.establishmentSubtitle || '', 95, 42);
 
-  // Ligne séparatrice dorée
-  doc.moveTo(20, 142).lineTo(W - 20, 142).lineWidth(1.5).stroke(GOLD);
+  // Adresse
+  doc.fontSize(8).font('Helvetica').fillColor('#333333')
+    .text(config?.address || '', 95, 58);
+
+  // Téléphones
+  doc.text(`Tel : ${config?.phone1 || ''} - ${config?.phone2 || ''}`, 95, 70);
+
+  // Email
+  doc.text(`Email : ${config?.email || ''}`, 95, 82);
+
+  // Date d'édition (à droite)
+  doc.fontSize(8).fillColor('#666666')
+    .text(
+      `Édité le : ${new Date().toLocaleDateString('fr-FR')}`,
+      380,
+      20,
+      { width: 180, align: 'right' }
+    );
+
+  // ══════════════════════════════════════════════════════
+  // TITRE DU RAPPORT
+  // ══════════════════════════════════════════════════════
+  doc.fontSize(17).font('Helvetica-Bold').fillColor('#222222')
+    .text(title, 25, 110);
+
+  doc.fontSize(8).font('Helvetica').fillColor('#777777')
+    .text(
+      `Généré le : ${new Date().toLocaleString('fr-FR')}`,
+      25,
+      130
+    );
+
+  // Ligne séparatrice
+  doc.moveTo(25, 145)
+    .lineTo(W - 25, 145)
+    .lineWidth(1)
+    .stroke(GOLD);
 };
 
 // ── TABLEAU PDF ───────────────────────────────────
@@ -164,7 +199,7 @@ const exportPDF = async (title, headers, rows, res, filename, totals = [], confi
 
   await drawHeader(doc, config, title);
 
-  const endY = drawTable(doc, headers, rows, 155);
+  const endY = drawTable(doc, headers, rows, 160); // Position ajustée pour le nouvel en-tête
 
   if (totals.length > 0) {
     drawTotals(doc, totals, endY);

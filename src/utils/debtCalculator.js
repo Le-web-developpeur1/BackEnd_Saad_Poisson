@@ -104,7 +104,7 @@ const allocatePaymentToSales = async (clientId, paymentAmount, userId = null) =>
 
       await sale.save();
 
-      // Enregistrer l'allocation
+      //Enregistrer l'allocation
       allocations.push({
         sale: sale._id,
         saleNumber: sale.saleNumber,

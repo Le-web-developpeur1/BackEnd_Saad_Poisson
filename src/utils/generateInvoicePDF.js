@@ -33,9 +33,12 @@ const generateInvoicePDF = async (invoice, res) => {
   doc.pipe(res);
 
   try {
-    const NAVY  = '#1A2B5F';
-    const GOLD  = '#D4A017';
-    const LIGHT = '#EBF5FB';
+    // ══════════════════════════════════════════════════════
+    // NOUVELLES COULEURS (comme l'historique client)
+    // ══════════════════════════════════════════════════════
+    const NAVY  = '#2E75B6'; // PRIMARY - Remplace l'ancien #1A2B5F
+    const GOLD  = '#F2B233'; // Nouveau GOLD - Remplace l'ancien #D4A017
+    const LIGHT = '#D9EAF7'; // LIGHT - Remplace l'ancien #EBF5FB
     const GRAY  = '#666666';
     const W     = 595;
     const PAGE_H   = 842;
@@ -327,9 +330,12 @@ const generateCreditPDF = async (data, res) => {
   doc.pipe(res);
 
   try {
-    const NAVY  = '#1A2B5F';
-    const GOLD  = '#D4A017';
-    const LIGHT = '#EBF5FB';
+    // ══════════════════════════════════════════════════════
+    // NOUVELLES COULEURS (comme l'historique client)
+    // ══════════════════════════════════════════════════════
+    const NAVY  = '#2E75B6'; // PRIMARY
+    const GOLD  = '#F2B233'; // Nouveau GOLD
+    const LIGHT = '#D9EAF7'; // LIGHT
     const W     = 595;
 
     // ── EN-TÊTE ───────────────────────────────────────
@@ -465,8 +471,11 @@ const generateSalarySlipPDF = async (payment, employee, res) => {
   doc.pipe(res);
 
   try {
-    const NAVY = '#1A2B5F';
-    const GOLD = '#D4A017';
+    // ══════════════════════════════════════════════════════
+    // NOUVELLES COULEURS (comme l'historique client)
+    // ══════════════════════════════════════════════════════
+    const NAVY = '#2E75B6'; // PRIMARY
+    const GOLD = '#F2B233'; // Nouveau GOLD
     const W = 595;
 
     // En-tête
@@ -560,8 +569,11 @@ const generateClientPaymentReceiptPDF = async (payment, config, res) => {
   doc.pipe(res);
 
   try {
-    const NAVY = '#1A2B5F';
-    const GOLD = '#D4A017';
+    // ══════════════════════════════════════════════════════
+    // NOUVELLES COULEURS (comme l'historique client)
+    // ══════════════════════════════════════════════════════
+    const NAVY = '#2E75B6'; // PRIMARY
+    const GOLD = '#F2B233'; // Nouveau GOLD
     const W    = 420; // A5 width
 
     // En-tête
@@ -1370,4 +1382,3 @@ const generateClientHistoryPDF = async (client, history, res) => {
 
 // ── EXPORTS ───────────────────────────────────────────
 module.exports = { generateInvoicePDF, generateCreditPDF, generateSalarySlipPDF, generateClientPaymentReceiptPDF, generateClientHistoryPDF };
-
