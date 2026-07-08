@@ -4,6 +4,7 @@ const Client = require('../models/Client');
 const StockMovement = require('../models/StockMovement');
 const Invoice = require('../models/Invoice');
 const { notifyUsers } = require('../utils/notify');
+const Counter = require('../models/Counter');
 
 const getSales = async (req, res) => {
   try {
@@ -117,11 +118,18 @@ const createSale = async (req, res) => {
     if (paid === 0) status = 'crédit';
     else if (paid < totalAmount) status = 'partiel';
 
-    const count = await Sale.countDocuments();
+    // const count = await Sale.countDocuments();
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    const saleNumber = `VTE-${year}${month}-${String(count + 1).padStart(4, '0')}`;
+
+    const counter = await Counter.findOneAndUpdate(
+      { name: 'sales'},
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+
+    const saleNumber = `VTE-${year}${month}-${String(counter.seq).padStart(4, '0')}`;
 
     const sale = await Sale.create({
       saleNumber,
@@ -263,12 +271,14 @@ const deleteSale = async (req, res) => {
     const sale = await Sale.findById(req.params.id);
     if (!sale) return res.status(404).json({ message: 'Vente introuvable' });
 
+    // 🆕 Restaurer le stock pour chaque article
     for (const item of sale.items) {
       const product = await Product.findById(item.product);
       if (product) {
         product.stockCartons += item.quantity;
         await product.save();
 
+        // 🆕 Créer un mouvement de retour
         await StockMovement.create({
           product: product._id,
           productName: product.name,
@@ -281,6 +291,7 @@ const deleteSale = async (req, res) => {
       }
     }
 
+    // 🆕 Ajuster la dette du client si vente à crédit
     if (sale.client && sale.paymentType === 'credit') {
       const client = await Client.findById(sale.client);
       if (client) {
@@ -290,10 +301,47 @@ const deleteSale = async (req, res) => {
       }
     }
 
+    // 🆕 NOUVEAU : Supprimer les mouvements de stock initiaux de cette vente
+    await StockMovement.deleteMany({
+      reason: 'vente',
+      reference: { $exists: false }, // Mouvements sans référence = mouvements initiaux
+      product: { $in: sale.items.map(item => item.product) },
+      createdAt: { 
+        $gte: new Date(sale.createdAt.getTime() - 5000), // 5 secondes avant
+        $lte: new Date(sale.createdAt.getTime() + 5000)  // 5 secondes après
+      }
+    });
+
+    // 🆕 NOUVEAU : Gérer les paiements liés à cette vente
+    const paymentsToUpdate = await ClientPayment.find({
+      'allocations.sale': sale._id
+    });
+
+    for (const payment of paymentsToUpdate) {
+      // Retirer l'allocation de cette vente
+      payment.allocations = payment.allocations.filter(
+        alloc => alloc.sale.toString() !== sale._id.toString()
+      );
+      
+      // Si plus d'allocations, marquer le paiement comme orphelin
+      if (payment.allocations.length === 0) {
+        payment.note = `[ORPHELIN] Vente ${sale.saleNumber} supprimée - ${payment.note || ''}`;
+      }
+      
+      await payment.save();
+    }
+
+    // Supprimer la facture liée
     await Invoice.findOneAndDelete({ sale: sale._id });
+    
+    // Supprimer la vente
     await Sale.findByIdAndDelete(req.params.id);
 
-    res.json({ message: 'Vente supprimée et stock restauré' });
+    res.json({ 
+      message: 'Vente supprimée et stock restauré',
+      stockRestored: sale.items.length,
+      paymentsAffected: paymentsToUpdate.length
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

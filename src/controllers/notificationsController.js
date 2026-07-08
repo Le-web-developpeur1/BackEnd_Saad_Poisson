@@ -18,7 +18,7 @@ const markAsRead = async (req, res) => {
   try {
     const notif = await Notification.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
-      { isRead: true },
+      { isRead: true, redAt: new Date() },
       { new: true }
     );
     if (!notif) return res.status(404).json({ message: 'Notification introuvable' });

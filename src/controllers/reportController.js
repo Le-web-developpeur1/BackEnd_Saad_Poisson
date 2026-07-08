@@ -524,6 +524,7 @@ const getCaisseReport = async (req, res) => {
       soldeMois,
       nbTransactionsMois: salesMonth.length,
       sales,
+      salesToday,
       expenses,
       totalCashIns,
       totalCreditToday

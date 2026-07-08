@@ -49,9 +49,88 @@ const updateProduct = async (req, res) => {
 // @desc    Supprimer un produit (désactivation)
 const deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+    const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Produit introuvable' });
-    res.json({ message: 'Produit désactivé avec succès' });
+
+    // 🆕 VÉRIFICATION 1 : Stock restant
+    if (product.stockCartons > 0) {
+      return res.status(400).json({ 
+        message: `Impossible de supprimer ce produit : ${product.stockCartons} carton(s) en stock. Veuillez d'abord ajuster le stock à 0.`,
+        currentStock: product.stockCartons
+      });
+    }
+
+    // 🆕 VÉRIFICATION 2 : Vérifier l'historique
+    const Sale = require('../models/Sale');
+    const totalSales = await Sale.countDocuments({ 'items.product': product._id });
+    const Damage = require('../models/Damage');
+    const totalDamages = await Damage.countDocuments({ product: product._id });
+    const totalMovements = await StockMovement.countDocuments({ product: product._id });
+    
+    const hasHistory = totalSales > 0 || totalDamages > 0 || totalMovements > 0;
+
+    if (hasHistory) {
+      // Soft delete pour préserver l'historique
+      product.isActive = false;
+      product.name = `[ARCHIVÉ] ${product.name}`; // 🆕 Marquer visuellement
+      await product.save();
+
+      return res.json({ 
+        message: 'Produit archivé avec succès (historique préservé)',
+        product,
+        archived: true,
+        stats: {
+          totalSales,
+          totalDamages,
+          totalMovements
+        }
+      });
+    } else {
+      // Hard delete si aucun historique (produit jamais utilisé)
+      await Product.findByIdAndDelete(req.params.id);
+      
+      return res.json({ 
+        message: 'Produit supprimé définitivement (aucun historique)',
+        deleted: true
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 RÉACTIVER UN PRODUIT ARCHIVÉ
+const restoreProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Produit introuvable' });
+
+    if (product.isActive) {
+      return res.status(400).json({ message: 'Ce produit est déjà actif' });
+    }
+
+    // Retirer le préfixe [ARCHIVÉ]
+    if (product.name.startsWith('[ARCHIVÉ] ')) {
+      product.name = product.name.replace('[ARCHIVÉ] ', '');
+    }
+
+    product.isActive = true;
+    await product.save();
+
+    res.json({ 
+      message: 'Produit réactivé avec succès',
+      product
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 LISTER LES PRODUITS ARCHIVÉS
+const getArchivedProducts = async (req, res) => {
+  try {
+    const archivedProducts = await Product.find({ isActive: false }).sort({ name: 1 });
+    res.json(archivedProducts);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -115,4 +194,8 @@ const getLowStockProducts = async (req, res) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct, adjustStock, getLowStockProducts };
+module.exports = { 
+  getProducts, getProduct, createProduct, updateProduct, deleteProduct, 
+  restoreProduct, getArchivedProducts,
+  adjustStock, getLowStockProducts 
+};

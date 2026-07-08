@@ -71,9 +71,92 @@ const updateEmployee = async (req, res) => {
 // @desc    Supprimé un employé
 const deleteEmployee = async (req, res) => {
   try {
-    const employee = await Employee.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+    const employee = await Employee.findById(req.params.id);
     if (!employee) return res.status(404).json({ message: 'Employé introuvable' });
-    res.json({ message: 'Employé supprimé avec succès' });
+
+    // 🆕 VÉRIFICATION 1 : Avances en attente
+    const pendingAdvances = await SalaryAdvance.countDocuments({
+      employee: employee._id,
+      status: 'en_attente'
+    });
+
+    if (pendingAdvances > 0) {
+      return res.status(400).json({ 
+        message: `Impossible de supprimer cet employé : ${pendingAdvances} avance(s) en attente non déduite(s).`,
+        pendingAdvances
+      });
+    }
+
+    // 🆕 VÉRIFICATION 2 : Vérifier l'historique
+    const paymentsCount = await SalaryPayment.countDocuments({ employee: employee._id });
+    const advancesCount = await SalaryAdvance.countDocuments({ employee: employee._id });
+    const StockMovement = require('../models/StockMovement');
+    const movementsCount = await StockMovement.countDocuments({ recordedBy: employee._id });
+    
+    const hasActivity = paymentsCount > 0 || advancesCount > 0 || movementsCount > 0;
+
+    if (hasActivity) {
+      // 🆕 Soft delete pour préserver l'historique
+      employee.isActive = false;
+      employee.name = `[ARCHIVÉ] ${employee.name}`;
+      await employee.save();
+
+      return res.json({ 
+        message: 'Employé archivé avec succès (historique préservé)',
+        employee,
+        archived: true,
+        stats: {
+          paymentsCount,
+          advancesCount,
+          movementsCount
+        }
+      });
+    } else {
+      // Hard delete si aucune activité
+      await Employee.findByIdAndDelete(req.params.id);
+      
+      return res.json({ 
+        message: 'Employé supprimé définitivement (aucune activité)',
+        deleted: true
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 RÉACTIVER UN EMPLOYÉ ARCHIVÉ
+const restoreEmployee = async (req, res) => {
+  try {
+    const employee = await Employee.findById(req.params.id);
+    if (!employee) return res.status(404).json({ message: 'Employé introuvable' });
+
+    if (employee.isActive) {
+      return res.status(400).json({ message: 'Cet employé est déjà actif' });
+    }
+
+    // Retirer le préfixe [ARCHIVÉ]
+    if (employee.name.startsWith('[ARCHIVÉ] ')) {
+      employee.name = employee.name.replace('[ARCHIVÉ] ', '');
+    }
+
+    employee.isActive = true;
+    await employee.save();
+
+    res.json({ 
+      message: 'Employé réactivé avec succès',
+      employee
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 LISTER LES EMPLOYÉS ARCHIVÉS
+const getArchivedEmployees = async (req, res) => {
+  try {
+    const archivedEmployees = await Employee.find({ isActive: false }).sort({ name: 1 });
+    res.json(archivedEmployees);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -231,6 +314,7 @@ const getAdvances = async (req, res) => {
   
 module.exports = {
   getEmployees, getEmployee, createEmployee, updateEmployee,
-  deleteEmployee, paySalary, getSalaryStats,
+  deleteEmployee, restoreEmployee, getArchivedEmployees,
+  paySalary, getSalaryStats,
   downloadSalarySlip, giveAdvance, getAdvances
 };

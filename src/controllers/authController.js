@@ -135,16 +135,120 @@ const deleteUser = async (req, res) => {
     const targetUser = await User.findById(req.params.id);
     if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' });
 
-    // Empêcher l'admin de se supprimer lui-même
+    // 🆕 VÉRIFICATION 1 : Empêcher l'admin de se supprimer lui-même
     if (targetUser._id.toString() === req.user._id.toString()) {
       return res.status(400).json({ message: 'Vous ne pouvez pas supprimer votre propre compte' });
     }
 
-    await User.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Utilisateur supprimé avec succès' });
+    // 🆕 VÉRIFICATION 2 : Protéger le dernier admin
+    if (targetUser.role === 'admin') {
+      const adminCount = await User.countDocuments({ role: 'admin', isActive: true });
+      if (adminCount <= 1) {
+        return res.status(400).json({ 
+          message: 'Impossible de supprimer le dernier administrateur actif du système'
+        });
+      }
+    }
+
+    // 🆕 VÉRIFICATION 3 : Vérifier l'historique d'activité
+    const Sale = require('../models/Sale');
+    const Invoice = require('../models/Invoice');
+    const ClientPayment = require('../models/ClientPayment');
+    
+    const salesCount = await Sale.countDocuments({ recordedBy: targetUser._id });
+    const invoicesCount = await Invoice.countDocuments({ issuedBy: targetUser._id });
+    const paymentsCount = await ClientPayment.countDocuments({ paidBy: targetUser._id });
+    
+    const hasActivity = salesCount > 0 || invoicesCount > 0 || paymentsCount > 0;
+
+    if (hasActivity) {
+      // 🆕 Soft delete pour préserver la traçabilité
+      targetUser.isActive = false;
+      targetUser.name = `[DÉSACTIVÉ] ${targetUser.name}`;
+      targetUser.email = `disabled_${Date.now()}_${targetUser.email}`; // Libérer l'email
+      await targetUser.save();
+
+      return res.json({ 
+        message: 'Utilisateur désactivé avec succès (activité préservée)',
+        user: {
+          _id: targetUser._id,
+          name: targetUser.name,
+          email: targetUser.email,
+          isActive: targetUser.isActive
+        },
+        archived: true,
+        stats: {
+          salesCount,
+          invoicesCount,
+          paymentsCount
+        }
+      });
+    } else {
+      // Hard delete si aucune activité (utilisateur jamais utilisé)
+      await User.findByIdAndDelete(req.params.id);
+      
+      return res.json({ 
+        message: 'Utilisateur supprimé définitivement (aucune activité)',
+        deleted: true
+      });
+    }
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-module.exports = { register, login, getMe, updatePassword, getUsers, updateUser, toggleUserStatus, deleteUser };
+// 🆕 RÉACTIVER UN UTILISATEUR
+const restoreUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'Utilisateur introuvable' });
+
+    if (user.isActive) {
+      return res.status(400).json({ message: 'Cet utilisateur est déjà actif' });
+    }
+
+    // Retirer le préfixe [DÉSACTIVÉ]
+    if (user.name.startsWith('[DÉSACTIVÉ] ')) {
+      user.name = user.name.replace('[DÉSACTIVÉ] ', '');
+    }
+
+    // Restaurer l'email (retirer le préfixe disabled_)
+    if (user.email.startsWith('disabled_')) {
+      user.email = user.email.split('_').slice(2).join('_');
+    }
+
+    user.isActive = true;
+    await user.save();
+
+    res.json({ 
+      message: 'Utilisateur réactivé avec succès',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 LISTER LES UTILISATEURS DÉSACTIVÉS
+const getInactiveUsers = async (req, res) => {
+  try {
+    const inactiveUsers = await User.find({ isActive: false })
+      .select('-password')
+      .sort({ name: 1 });
+    
+    res.json(inactiveUsers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { 
+  register, login, getMe, updatePassword, getUsers, updateUser, 
+  toggleUserStatus, deleteUser, restoreUser, getInactiveUsers 
+};

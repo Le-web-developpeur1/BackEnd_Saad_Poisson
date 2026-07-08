@@ -47,8 +47,97 @@ const updateClient = async (req, res) => {
 
 const deleteClient = async (req, res) => {
   try {
-    await Client.findByIdAndUpdate(req.params.id, { isActive: false });
-    res.json({ message: 'Client désactivé avec succès' });
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+    // 🆕 VÉRIFICATION 1 : Dette restante
+    if (client.currentDebt > 0) {
+      return res.status(400).json({ 
+        message: `Impossible de supprimer ce client : dette restante de ${client.currentDebt.toLocaleString('fr-FR')} GNF. Veuillez d'abord encaisser tous les paiements.`,
+        currentDebt: client.currentDebt
+      });
+    }
+
+    // 🆕 VÉRIFICATION 2 : Ventes en cours
+    const activeSales = await Sale.find({
+      client: client._id,
+      status: { $in: ['partiel', 'crédit'] }
+    });
+
+    if (activeSales.length > 0) {
+      return res.status(400).json({ 
+        message: `Impossible de supprimer ce client : ${activeSales.length} vente(s) en cours non soldée(s).`,
+        activeSales: activeSales.length
+      });
+    }
+
+    // 🆕 VÉRIFICATION 3 : Vérifier s'il y a un historique
+    const totalSales = await Sale.countDocuments({ client: client._id });
+    const totalPayments = await ClientPayment.countDocuments({ client: client._id });
+    const hasHistory = totalSales > 0 || totalPayments > 0;
+
+    if (hasHistory) {
+      // Soft delete pour préserver l'historique
+      client.isActive = false;
+      client.name = `[ARCHIVÉ] ${client.name}`; // 🆕 Marquer visuellement
+      await client.save();
+
+      return res.json({ 
+        message: 'Client archivé avec succès (historique préservé)',
+        client,
+        archived: true,
+        stats: {
+          totalSales,
+          totalPayments,
+          totalDebt: 0
+        }
+      });
+    } else {
+      // Hard delete si aucun historique (client jamais utilisé)
+      await Client.findByIdAndDelete(req.params.id);
+      
+      return res.json({ 
+        message: 'Client supprimé définitivement (aucun historique)',
+        deleted: true
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 RÉACTIVER UN CLIENT ARCHIVÉ
+const restoreClient = async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+    if (client.isActive) {
+      return res.status(400).json({ message: 'Ce client est déjà actif' });
+    }
+
+    // Retirer le préfixe [ARCHIVÉ]
+    if (client.name.startsWith('[ARCHIVÉ] ')) {
+      client.name = client.name.replace('[ARCHIVÉ] ', '');
+    }
+
+    client.isActive = true;
+    await client.save();
+
+    res.json({ 
+      message: 'Client réactivé avec succès',
+      client
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 LISTER LES CLIENTS ARCHIVÉS
+const getArchivedClients = async (req, res) => {
+  try {
+    const archivedClients = await Client.find({ isActive: false }).sort({ name: 1 });
+    res.json(archivedClients);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -56,55 +145,62 @@ const deleteClient = async (req, res) => {
 
 const recordClientPayment = async (req, res) => {
   try {
-    const { amount, modePaiement } = req.body;
+    const { amount, modePaiement, note } = req.body;
     const client = await Client.findById(req.params.id);
     if (!client) return res.status(404).json({ message: 'Client introuvable' });
 
-    if (amount > client.currentDebt) {
-      return res.status(400).json({ message: 'Le montant dépasse la dette actuelle' });
+    // Validation du montant
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Montant invalide' });
     }
+
+    if (amount > client.currentDebt) {
+      return res.status(400).json({ 
+        message: `Le montant (${amount} GNF) dépasse la dette actuelle (${client.currentDebt} GNF)` 
+      });
+    }
+
     if (!modePaiement) {
       return res.status(400).json({ message: 'Mode de paiement obligatoire' });
     }
 
-    client.currentDebt -= amount;
+    // 🆕 Utiliser la fonction utilitaire pour allouer le paiement
+    const { allocatePaymentToSales } = require('../utils/debtCalculator');
+    
+    const clientDebtBefore = client.currentDebt;
+    
+    const { allocations, salesUpdated, totalAllocated } = await allocatePaymentToSales(
+      client._id, 
+      amount, 
+      req.user._id
+    );
+
+    // Mettre à jour la dette du client
+    client.currentDebt = Math.max(0, client.currentDebt - totalAllocated);
     client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
     await client.save();
 
-    // Mettre à jour les ventes à crédit (du plus ancien au plus récent)
-    let remainingPayment = amount;
-    const creditSales = await Sale.find({
-      client: client._id,
-      paymentType: 'credit',
-      remainingAmount: { $gt: 0 }
-    }).sort({ createdAt: 1 });
-
-    for (const sale of creditSales) {
-      if (remainingPayment <= 0) break;
-
-      const payment = Math.min(remainingPayment, sale.remainingAmount);
-      sale.amountPaid       += payment;
-      sale.remainingAmount  -= payment;
-
-      if (sale.remainingAmount === 0) sale.status = 'payé';
-      else sale.status = 'partiel';
-
-      await sale.save();
-      remainingPayment -= payment;
-    }
-
-    // Créer un enregistrement de paiement avec mode de paiement
+    // 🆕 Créer un enregistrement de paiement AMÉLIORÉ avec traçabilité
     const newPayment = await ClientPayment.create({
-      client:        client._id,
-      clientName:    client.name,
-      clientPhone:   client.phone || '',
-      amount:        Number(amount),
-      remainingDebt: client.currentDebt,
+      client: client._id,
+      clientName: client.name,
+      clientPhone: client.phone || '',
+      amount: totalAllocated,
+      allocations, // 🆕 Liste des ventes payées
+      clientDebtBefore,
+      clientDebtAfter: client.currentDebt,
       modePaiement,
-      paidBy:        req.user._id,
+      note: note || '',
+      paidBy: req.user._id,
     });
 
-    res.json({ message: 'Paiement enregistré', client, paymentId: newPayment._id });
+    res.json({ 
+      message: 'Paiement enregistré avec succès', 
+      client, 
+      payment: newPayment,
+      salesUpdated: salesUpdated.length,
+      details: allocations.map(a => `${a.saleNumber}: ${a.amountAllocated} GNF`)
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -151,34 +247,65 @@ const downloadCreditPDF = async (req, res) => {
 };
 
 const recalculateDebt = async (req, res) => {
-    try {
-      const Sale = require('../models/Sale');
-      const client = await Client.findById(req.params.id);
-      if (!client) return res.status(404).json({ message: 'Client introuvable' });
-  
-      // Recalculer la dette réelle depuis les ventes
-      const sales = await Sale.find({
-        client: req.params.id,
-        paymentType: 'credit'
+  try {
+    const { syncClientDebt, checkDebtConsistency } = require('../utils/debtCalculator');
+    
+    const clientId = req.params.id;
+    const client = await Client.findById(clientId);
+    if (!client) return res.status(404).json({ message: 'Client introuvable' });
+
+    // Synchroniser la dette
+    const result = await syncClientDebt(clientId);
+
+    res.json({ 
+      message: result.wasDesynchronized 
+        ? `Dette recalculée et corrigée` 
+        : 'Dette déjà synchronisée',
+      client: result.client,
+      oldDebt: result.oldDebt,
+      newDebt: result.newDebt,
+      difference: result.difference,
+      correctionNeeded: result.wasDesynchronized
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 🆕 VÉRIFIER LA COHÉRENCE DE TOUTES LES DETTES
+const checkAllDebtsConsistency = async (req, res) => {
+  try {
+    const { checkDebtConsistency } = require('../utils/debtCalculator');
+    
+    const inconsistencies = await checkDebtConsistency();
+
+    if (inconsistencies.length === 0) {
+      return res.json({ 
+        message: 'Toutes les dettes sont cohérentes ✅',
+        inconsistencies: []
       });
-  
-      const realDebt = sales.reduce((sum, s) => sum + s.remainingAmount, 0);
-      client.currentDebt = realDebt;
-      client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
-      await client.save();
-  
-      res.json({ message: 'Dette recalculée', client, realDebt });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
     }
+
+    res.json({ 
+      message: `${inconsistencies.length} incohérence(s) détectée(s) ⚠️`,
+      inconsistencies,
+      totalClients: inconsistencies.length
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 const downloadPaymentReceipt = async (req, res) => {
   try {
-    const payment = await ClientPayment.findById(req.params.paymentId);
+    const payment = await ClientPayment.findById(req.params.paymentId)
+      .populate('allocations.sale', 'saleNumber'); // 🆕 Peupler les infos de vente
+    
     if (!payment) return res.status(404).json({ message: "Paiement introuvable" });
+    
     let config = await SystemConfig.findOne();
     if (!config) config = {};
+    
     await generateClientPaymentReceiptPDF(payment, config, res);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -218,7 +345,7 @@ const getClientHistory = async (req, res) => {
         reference: `PAY-${p._id.toString().slice(-6).toUpperCase()}`,
         montant:   p.amount,
         paye:      p.amount,
-        reste:     p.remainingDebt, // solde global après ce paiement
+        reste:     p.clientDebtAfter || 0, // ✅ Dette globale du client APRÈS ce paiement
         paidBy:    p.paidBy?.name || '—',
       }))
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -243,16 +370,16 @@ const downloadClientRelevePDF = async (req, res) => {
         date:      s.createdAt,
         reference: s.saleNumber,
         montant:   s.totalAmount,
-        paye:      s.initialAmountPaid || 0,
-        reste:     s.totalAmount - (s.initialAmountPaid || 0),
+        paye:      s.initialAmountPaid || 0,                      // Acompte initial au moment de la vente
+        reste:     s.totalAmount - (s.initialAmountPaid || 0),    // Reste initial de cette vente
         status:    s.status
       })),
       ...payments.map(p => ({
         type:      'paiement',
         date:      p.createdAt,
         reference: `PAY-${p._id.toString().slice(-6).toUpperCase()}`,
-        montant:   p.amount,
-        reste:     p.remainingDebt
+        montant:   p.amount,                                       // Montant de ce paiement
+        reste:     p.clientDebtAfter || 0                          // Dette globale du client APRÈS ce paiement
       }))
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -264,6 +391,7 @@ const downloadClientRelevePDF = async (req, res) => {
 
 module.exports = {
   getClients, getClient, createClient, updateClient, deleteClient,
+  restoreClient, getArchivedClients,
   recordClientPayment, getClientCredits, downloadCreditPDF,
-  recalculateDebt, downloadPaymentReceipt, getClientHistory, downloadClientRelevePDF,
+  recalculateDebt, checkAllDebtsConsistency, downloadPaymentReceipt, getClientHistory, downloadClientRelevePDF,
 };
