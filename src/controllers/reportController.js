@@ -575,7 +575,7 @@ const getCapitalReport = async (req, res) => {
 
     // ── 2. CHIFFRE D'AFFAIRES ESTIMÉ ───────────────
     const chiffreAffairesEstime = products.reduce((sum, p) =>
-      sum + ((p.stockInitialCartons || 0) * p.pricePerCarton), 0
+      sum + ((p.stockCartons || 0) * p.pricePerCarton), 0
     );
 
     // ── 7. AVARIES ────────────────────────────────
