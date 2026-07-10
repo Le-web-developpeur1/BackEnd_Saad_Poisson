@@ -272,14 +272,48 @@ const deleteSale = async (req, res) => {
     const sale = await Sale.findById(req.params.id);
     if (!sale) return res.status(404).json({ message: 'Vente introuvable' });
 
-    // 🆕 Restaurer le stock pour chaque article
+    // ==========================================
+    // 1. SUPPRIMER LA FACTURE LIÉE
+    // ==========================================
+    await Invoice.findOneAndDelete({ sale: sale._id });
+
+    // ==========================================
+    // 2. GÉRER LES PAIEMENTS LIÉS À CETTE VENTE
+    // ==========================================
+    const paymentsToUpdate = await ClientPayment.find({
+      'allocations.sale': sale._id
+    });
+
+    let paymentsDeleted = 0;
+    let paymentsUpdated = 0;
+
+    for (const payment of paymentsToUpdate) {
+      // Retirer l'allocation de cette vente
+      payment.allocations = payment.allocations.filter(
+        alloc => alloc.sale.toString() !== sale._id.toString()
+      );
+      
+      // Si plus d'allocations, SUPPRIMER le paiement complètement
+      if (payment.allocations.length === 0) {
+        await ClientPayment.findByIdAndDelete(payment._id);
+        paymentsDeleted++;
+      } else {
+        // Sinon juste sauvegarder les allocations mises à jour
+        await payment.save();
+        paymentsUpdated++;
+      }
+    }
+
+    // ==========================================
+    // 3. RESTAURER LE STOCK POUR CHAQUE ARTICLE
+    // ==========================================
     for (const item of sale.items) {
       const product = await Product.findById(item.product);
       if (product) {
         product.stockCartons += item.quantity;
         await product.save();
 
-        // 🆕 Créer un mouvement de retour
+        // Créer un mouvement de retour
         await StockMovement.create({
           product: product._id,
           productName: product.name,
@@ -292,17 +326,9 @@ const deleteSale = async (req, res) => {
       }
     }
 
-    // 🆕 Ajuster la dette du client si vente à crédit
-    if (sale.client && sale.paymentType === 'credit') {
-      const client = await Client.findById(sale.client);
-      if (client) {
-        client.currentDebt = Math.max(0, client.currentDebt - sale.remainingAmount);
-        client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
-        await client.save();
-      }
-    }
-
-    // 🆕 NOUVEAU : Supprimer les mouvements de stock initiaux de cette vente
+    // ==========================================
+    // 4. SUPPRIMER LES MOUVEMENTS DE STOCK INITIAUX DE CETTE VENTE
+    // ==========================================
     await StockMovement.deleteMany({
       reason: 'vente',
       reference: { $exists: false }, // Mouvements sans référence = mouvements initiaux
@@ -313,39 +339,57 @@ const deleteSale = async (req, res) => {
       }
     });
 
-    // 🆕 NOUVEAU : Gérer les paiements liés à cette vente
-    const paymentsToUpdate = await ClientPayment.find({
-      'allocations.sale': sale._id
-    });
+    // ==========================================
+    // 5. AJUSTER LA DETTE DU CLIENT SI VENTE À CRÉDIT
+    // ==========================================
+    if (sale.client && sale.paymentType === 'credit') {
+      const client = await Client.findById(sale.client);
+      if (client) {
+        
+        // Nettoyer debtHistory - Retirer l'entrée créée lors de cette vente
+        const montantInitialCredit = sale.totalAmount - sale.initialAmountPaid;
+        client.debtHistory = client.debtHistory.filter(entry => {
+          const isSameAmount = Math.abs(entry.amount - montantInitialCredit) < 0.01;
+          const isSameDate = Math.abs(new Date(entry.date) - new Date(sale.createdAt)) < 60000; // 1 minute de marge
+          return !(isSameAmount && isSameDate);
+        });
 
-    for (const payment of paymentsToUpdate) {
-      // Retirer l'allocation de cette vente
-      payment.allocations = payment.allocations.filter(
-        alloc => alloc.sale.toString() !== sale._id.toString()
-      );
-      
-      // Si plus d'allocations, marquer le paiement comme orphelin
-      if (payment.allocations.length === 0) {
-        payment.note = `[ORPHELIN] Vente ${sale.saleNumber} supprimée - ${payment.note || ''}`;
+        // Recalculer la dette totale depuis toutes les ventes à crédit restantes
+        const allCreditSales = await Sale.find({ 
+          _id: { $ne: sale._id }, // Exclure la vente qu'on supprime
+          client: client._id, 
+          paymentType: 'credit' 
+        });
+        
+        client.currentDebt = allCreditSales.reduce((sum, s) => sum + s.remainingAmount, 0);
+        
+        // Recalculer le statut de blocage
+        client.isBlocked = client.creditLimit > 0 && client.currentDebt >= client.creditLimit;
+        
+        await client.save();
       }
-      
-      await payment.save();
     }
 
-    // Supprimer la facture liée
-    await Invoice.findOneAndDelete({ sale: sale._id });
-    
-    // Supprimer la vente
+    // ==========================================
+    // 6. SUPPRIMER LA VENTE
+    // ==========================================
     await Sale.findByIdAndDelete(req.params.id);
 
     res.json({ 
-      message: 'Vente supprimée et stock restauré',
-      stockRestored: sale.items.length,
-      paymentsAffected: paymentsToUpdate.length
+      message: 'Vente supprimée avec succès - Toutes les données liées ont été nettoyées',
+      details: {
+        saleNumber: sale.saleNumber,
+        stockRestored: sale.items.length,
+        invoiceDeleted: true,
+        paymentsDeleted,
+        paymentsUpdated,
+        clientDebtRecalculated: sale.client && sale.paymentType === 'credit'
+      }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 module.exports = { getSales, getSale, createSale, updateSale, deleteSale };
