@@ -5,6 +5,7 @@ const StockMovement = require('../models/StockMovement');
 const Invoice = require('../models/Invoice');
 const { notifyUsers } = require('../utils/notify');
 const Counter = require('../models/Counter');
+const ClientPayment = require('../models/ClientPayment');
 
 const getSales = async (req, res) => {
   try {
