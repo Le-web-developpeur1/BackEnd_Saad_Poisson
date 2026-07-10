@@ -258,18 +258,21 @@ const exportStockReport = async (req, res) => {
     const config     = await SystemConfig.findOne();
 
     const title   = 'Rapport des Stocks';
-    const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Prix/Carton (achat)', 'Valeur stock (achat)', 'Statut'];
+    const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Prix/Carton (achat)','Prix/Carton (Vente)', 'Valeur stock (achat)', 'Valeur stock (Vente)', 'Statut'];
     const rows    = products.map(p => [
       p.name,
       p.category || '—',
       String(p.stockCartons),
       `${formatAmount(p.purchasePricePerCarton || 0)} GNF`,
+      `${formatAmount(p.pricePerCarton || 0)} GNF`,
       `${formatAmount(p.stockCartons * (p.purchasePricePerCarton || 0))} GNF`,
+      `${formatAmount(p.stockCartons * (p.pricePerCarton || 0))} GNF`,
       p.stockCartons <= p.alertThreshold ? 'Stock bas' : 'OK'
     ]);
 
     // Totaux
     const valeurStockAchat  = products.reduce((sum, p) => sum + (p.stockCartons * (p.purchasePricePerCarton || 0)), 0);
+    const valeurStockVente  = products.reduce((sum, p) => sum + (p.stockCartons * (p.pricePerCarton || 0)), 0);
     const totalCartons       = products.reduce((sum, p) => sum + p.stockCartons, 0);
     const produitsStockBas   = products.filter(p => p.stockCartons <= p.alertThreshold).length;
 
@@ -278,6 +281,7 @@ const exportStockReport = async (req, res) => {
       { label: 'Total cartons en stock',          value: String(totalCartons),                       highlight: false },
       { label: 'Produits en stock bas',           value: String(produitsStockBas),                   highlight: false },
       { label: 'Valeur totale stock (prix achat)', value: `${formatAmount(valeurStockAchat)} GNF`,   highlight: true  },
+      { label: 'Valeur totale stock (prix Vente)', value: `${formatAmount(valeurStockVente)} GNF`,   highlight: true  },
     ];
 
     if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-stocks', totals, config);
