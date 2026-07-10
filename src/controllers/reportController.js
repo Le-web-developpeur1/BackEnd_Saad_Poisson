@@ -575,26 +575,16 @@ const getCapitalReport = async (req, res) => {
 
     // ── 2. CHIFFRE D'AFFAIRES ESTIMÉ ───────────────
     const chiffreAffairesEstime = products.reduce((sum, p) =>
-      sum + ((p.stockCartons || 0) * p.pricePerCarton), 0
+      sum + ((p.stockInitialCartons || 0) * p.pricePerCarton), 0
     );
 
     // ── 7. AVARIES ────────────────────────────────
     const avaries = damages.reduce((sum, d) => sum + d.estimatedLoss, 0);
 
-    // ── 3. STOCK FINAL ────────────────────────────
-    const valeurVentesAchat = sales.reduce((sum, s) => {
-      return sum + s.items.reduce((iSum, item) => {
-        const product = products.find(p => p._id.toString() === item.product.toString());
-        if (!product) return iSum;
-        const prixAchat  = product.purchasePricePerCarton || 0;
-        const qtyCartons = item.unit === 'carton'
-          ? item.quantity
-          : item.quantity / (product.kgPerCarton || 1);
-        return iSum + (qtyCartons * prixAchat);
-      }, 0);
-    }, 0);
+    // ── 3. VALEUR DES VENTES (au prix de vente) ────────────────────────────
+    const valeurTotalVentes = sales.reduce((sum, s) => sum + s.totalAmount, 0);
 
-    const stockFinal = Math.max(0, capitalInitial - valeurVentesAchat - avaries);
+    const stockFinal = Math.max(0, chiffreAffairesEstime - valeurTotalVentes - avaries);
 
     // ── 4. CAISSE ─────────────────────────────────
     const totalVentesComptant = sales
@@ -604,9 +594,11 @@ const getCapitalReport = async (req, res) => {
     const clientPaymentsComptant = clientPayments
       .filter(p => p.modePaiement !== 'virement')
       .reduce((sum, p) => sum + p.amount, 0);
+
     const clientPaymentsVirement = clientPayments
       .filter(p => p.modePaiement === 'virement')
       .reduce((sum, p) => sum + p.amount, 0);
+
     const totalClientPayments = clientPaymentsComptant + clientPaymentsVirement;
 
     const totalAcomptesPaidCredit = sales
@@ -637,8 +629,8 @@ const getCapitalReport = async (req, res) => {
     const totalCashIns = cashIns.reduce((sum, c) => sum + c.amount, 0);
 
     const caisse = totalVentesComptant + totalAcomptesInitiaux + clientPaymentsComptant
-                   + transfertsBanqueVersCaisse - transfertsCaisseVersBanque + totalCashIns
-                   - depensesComptant - paiementsFournisseursComptant;
+                 + transfertsBanqueVersCaisse - transfertsCaisseVersBanque + totalCashIns
+                 - depensesComptant - paiementsFournisseursComptant;
 
     // ── 5. BANQUE ──────────────────────────────────
     const paiementsFournisseursVirement = supplierExpenses
@@ -680,7 +672,7 @@ const getCapitalReport = async (req, res) => {
         totalClientPayments,
         clientPaymentsComptant,
         clientPaymentsVirement,
-        valeurVentesAchat,
+        valeurTotalVentes,
         nbProduits: products.length,
         nbClients:  clients.filter(c => c.currentDebt > 0).length,
       },

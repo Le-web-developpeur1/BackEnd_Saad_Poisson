@@ -1,6 +1,9 @@
 const Product = require('../models/Product');
 const StockMovement = require('../models/StockMovement');
 const { notifyUsers } = require('../utils/notify');
+const Sale = require('../models/Sale');
+const Damage = require('../models/Damage');
+
 
 // @desc  Lister tous les produits
 const getProducts = async (req, res) => {
@@ -46,33 +49,40 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// @desc    Supprimer un produit (désactivation)
+// @desc    Supprimer un produit (admin only)
 const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Produit introuvable' });
 
-    // 🆕 VÉRIFICATION 1 : Stock restant
-    if (product.stockCartons > 0) {
-      return res.status(400).json({ 
-        message: `Impossible de supprimer ce produit : ${product.stockCartons} carton(s) en stock. Veuillez d'abord ajuster le stock à 0.`,
-        currentStock: product.stockCartons
-      });
-    }
-
-    // 🆕 VÉRIFICATION 2 : Vérifier l'historique
+    // ══════════════════════════════════════════════════════════
+    // ÉTAPE 1 : Vérifier si le produit a un historique
+    // ══════════════════════════════════════════════════════════
     const Sale = require('../models/Sale');
-    const totalSales = await Sale.countDocuments({ 'items.product': product._id });
     const Damage = require('../models/Damage');
+    
+    const totalSales = await Sale.countDocuments({ 'items.product': product._id });
     const totalDamages = await Damage.countDocuments({ product: product._id });
     const totalMovements = await StockMovement.countDocuments({ product: product._id });
     
     const hasHistory = totalSales > 0 || totalDamages > 0 || totalMovements > 0;
 
+    // ══════════════════════════════════════════════════════════
+    // CAS 1 : Produit AVEC historique → Archivage (soft delete)
+    // ══════════════════════════════════════════════════════════
     if (hasHistory) {
-      // Soft delete pour préserver l'historique
+      // ⚠️ Vérifier le stock restant UNIQUEMENT pour les produits avec historique
+      if (product.stockCartons > 0) {
+        return res.status(400).json({ 
+          message: `Impossible d'archiver ce produit : ${product.stockCartons} carton(s) en stock. Veuillez d'abord ajuster le stock à 0.`,
+          currentStock: product.stockCartons,
+          hasHistory: true
+        });
+      }
+
+      // Archiver le produit (soft delete)
       product.isActive = false;
-      product.name = `[ARCHIVÉ] ${product.name}`; // 🆕 Marquer visuellement
+      product.name = `[ARCHIVÉ] ${product.name}`;
       await product.save();
 
       return res.json({ 
@@ -85,19 +95,29 @@ const deleteProduct = async (req, res) => {
           totalMovements
         }
       });
-    } else {
-      // Hard delete si aucun historique (produit jamais utilisé)
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // CAS 2 : Produit SANS historique → Suppression totale (hard delete)
+    // ══════════════════════════════════════════════════════════
+    else {
+      // Supprimer définitivement (même avec du stock)
       await Product.findByIdAndDelete(req.params.id);
       
       return res.json({ 
-        message: 'Produit supprimé définitivement (aucun historique)',
-        deleted: true
+        message: product.stockCartons > 0 
+          ? `Produit supprimé définitivement (aucun historique, ${product.stockCartons} carton(s) inclus)`
+          : 'Produit supprimé définitivement (aucun historique)',
+        deleted: true,
+        stockDeleted: product.stockCartons
       });
     }
+
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 // 🆕 RÉACTIVER UN PRODUIT ARCHIVÉ
 const restoreProduct = async (req, res) => {
