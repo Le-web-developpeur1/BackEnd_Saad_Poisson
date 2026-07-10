@@ -104,18 +104,27 @@ const drawHeader = async (doc, config, title) => {
 };
 
 // ── TABLEAU PDF ───────────────────────────────────
-const drawTable = (doc, headers, rows, startY) => {
+const drawTable = (doc, headers, rows, startY, customWidths = null) => {
   const W        = 595;
   const margin   = 20;
   const tableW   = W - margin * 2;
-  const colWidth = tableW / headers.length;
-  let   y        = startY;
+  
+  // Si largeurs personnalisées fournies, les utiliser, sinon largeur égale
+  const colWidths = customWidths || Array(headers.length).fill(tableW / headers.length);
+  
+  // Fonction pour obtenir la position X d'une colonne
+  const getColX = (colIndex) => {
+    return margin + colWidths.slice(0, colIndex).reduce((sum, w) => sum + w, 0);
+  };
+  
+  let y = startY;
 
   // Header tableau
   doc.rect(margin, y, tableW, 24).fill(NAVY);
   headers.forEach((h, i) => {
+    const colX = getColX(i);
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
-      .text(h, margin + i * colWidth + 5, y + 8, { width: colWidth - 10 });
+      .text(h, colX + 5, y + 8, { width: colWidths[i] - 10 });
   });
   y += 24;
 
@@ -127,8 +136,9 @@ const drawTable = (doc, headers, rows, startY) => {
       // Répéter le header
       doc.rect(margin, y, tableW, 24).fill(NAVY);
       headers.forEach((h, i) => {
+        const colX = getColX(i);
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
-          .text(h, margin + i * colWidth + 5, y + 8, { width: colWidth - 10 });
+          .text(h, colX + 5, y + 8, { width: colWidths[i] - 10 });
       });
       y += 24;
     }
@@ -136,8 +146,9 @@ const drawTable = (doc, headers, rows, startY) => {
     const bg = idx % 2 === 0 ? '#FFFFFF' : '#EBF5FB';
     doc.rect(margin, y, tableW, 20).fill(bg);
     row.forEach((cell, i) => {
+      const colX = getColX(i);
       doc.fontSize(7.5).font('Helvetica').fillColor('#222222')
-        .text(String(cell ?? '—'), margin + i * colWidth + 5, y + 6, { width: colWidth - 10 });
+        .text(String(cell ?? '—'), colX + 5, y + 6, { width: colWidths[i] - 10 });
     });
     y += 20;
   });
@@ -191,7 +202,7 @@ const drawFooter = (doc, config) => {
 // ══════════════════════════════════════════════════
 // EXPORT PDF
 // ══════════════════════════════════════════════════
-const exportPDF = async (title, headers, rows, res, filename, totals = [], config = null) => {
+const exportPDF = async (title, headers, rows, res, filename, totals = [], config = null, customWidths = null) => {
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=${filename}.pdf`);
@@ -199,7 +210,7 @@ const exportPDF = async (title, headers, rows, res, filename, totals = [], confi
 
   await drawHeader(doc, config, title);
 
-  const endY = drawTable(doc, headers, rows, 160); // Position ajustée pour le nouvel en-tête
+  const endY = drawTable(doc, headers, rows, 160, customWidths); // Passer les largeurs personnalisées
 
   if (totals.length > 0) {
     drawTotals(doc, totals, endY);

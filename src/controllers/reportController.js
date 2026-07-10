@@ -259,6 +259,21 @@ const exportStockReport = async (req, res) => {
 
     const title   = 'Rapport des Stocks';
     const headers = ['Produit', 'Catégorie', 'Stock Cartons', 'Prix/Carton (achat)','Prix/Carton (Vente)', 'Valeur stock (achat)', 'Valeur stock (Vente)', 'Statut'];
+    
+    // ═══════════════════════════════════════════════════════════
+    // LARGEURS PERSONNALISÉES DES COLONNES (total = 555px)
+    // ═══════════════════════════════════════════════════════════
+    const customWidths = [
+      100,  // Produit (plus large)
+      60,   // Catégorie (réduit)
+      50,   // Stock Cartons (réduit)
+      70,   // Prix/Carton achat (réduit)
+      70,   // Prix/Carton vente (réduit)
+      85,   // Valeur stock achat (réduit)
+      85,   // Valeur stock vente (réduit)
+      35    // Statut (très réduit)
+    ];
+    
     const rows    = products.map(p => [
       p.name,
       p.category || '—',
@@ -284,7 +299,7 @@ const exportStockReport = async (req, res) => {
       { label: 'Valeur totale stock (prix Vente)', value: `${formatAmount(valeurStockVente)} GNF`,   highlight: true  },
     ];
 
-    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-stocks', totals, config);
+    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, 'rapport-stocks', totals, config, customWidths); // Passer les largeurs
     if (format === 'word') return await exportWord(title, headers, rows, res, 'rapport-stocks');
     if (format === 'csv')  return await exportCSV(headers, rows, res, 'rapport-stocks');
 
