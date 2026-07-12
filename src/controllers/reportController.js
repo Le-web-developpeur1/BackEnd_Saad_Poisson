@@ -473,6 +473,9 @@ const getCaisseReport = async (req, res) => {
     const clientPayTodayComptant = clientPayToday.filter(p => p.modePaiement !== 'virement').reduce((sum, p) => sum + p.amount, 0);
     const clientPayTodayTotal    = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
     const acomptesToday          = Math.max(0, creditPaidToday - clientPayTodayTotal);
+
+    const creditNetToday = totalCreditToday - clientPayTodayTotal;
+
     const transfertsBanqueCaisseToday = transfertsToday
       .filter(t => t.direction === 'banque_vers_caisse')
       .reduce((sum, t) => sum + t.amount, 0);
@@ -480,6 +483,8 @@ const getCaisseReport = async (req, res) => {
     const paiementsFournisseursToday = supplierExpToday
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
+
+
       
     const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday;
     const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0);
@@ -546,7 +551,7 @@ const getCaisseReport = async (req, res) => {
       salesToday,
       expenses,
       totalCashIns,
-      totalCreditToday
+      creditNetToday
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

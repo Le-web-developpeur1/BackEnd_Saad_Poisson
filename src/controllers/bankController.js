@@ -4,6 +4,9 @@ const BankTransfer   = require('../models/BankTransfer');
 const ClientPayment  = require('../models/ClientPayment');
 const SupplierExpense = require('../models/SupplierExpense');
 const BankIn          = require('../models/BankIn');
+const CashIn = require('../models/CashIn');
+
+
 
 const getBankReport = async (req, res) => {
   try {
@@ -86,6 +89,14 @@ const transferToBanque = async (req, res) => {
     const supplierExpenses = await SupplierExpense.find();
     const transferts       = await BankTransfer.find();
 
+    const cashIns = await CashIn.find();
+    const totalCashIns = cashIns.reduce((sum, c) => sum + c.amount, 0);
+
+
+    const bankIns = await BankIn.find();
+    const totalBankIns = bankIns.reduce((sum, b) => sum + b.amount, 0);
+
+
     const totalVentesComptant = sales
       .filter(s => s.paymentType === 'comptant')
       .reduce((sum, s) => sum + s.amountPaid, 0);
@@ -115,7 +126,7 @@ const transferToBanque = async (req, res) => {
 
     const soldeCaisse = totalVentesComptant + acomptesInitiaux + clientPaymentsComptant
                        + transfertsEntreeCaisse - transfertsSortieCaisse
-                       - depensesOperationnelles - paiementsFournisseursComptant;
+                       - depensesOperationnelles - paiementsFournisseursComptant + totalCashIns;
 
     // ── Calcul du solde Banque actuel ──────────────────
     const totalVentesVirement = sales
@@ -139,7 +150,7 @@ const transferToBanque = async (req, res) => {
 
     const soldeBanque = totalVentesVirement + clientPaymentsVirement
                        + transfertsEntreeBanque - transfertsSortieBanque
-                       - paiementsFournisseursVirement;
+                       - paiementsFournisseursVirement + totalBankIns;
 
     // ── Validation du solde disponible ─────────────────
     if (direction === 'caisse_vers_banque' && montant > soldeCaisse) {
