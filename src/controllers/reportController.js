@@ -38,30 +38,35 @@ const getDailyReport = async (req, res) => {
       .filter(s => s.paymentType === 'virement')
       .reduce((sum, s) => sum + s.amountPaid, 0);
 
-    // Encaissé total = comptant + virement (caisse + banque)
-    const totalEncaisse = totalCash + totalVirement;
+    const totalAcomptes = sales
+      .filter(s => s.paymentType === 'credit')
+      .reduce((sum, s) => sum + s.amountPaid, 0);
+
 
     const totalCredit = sales
       .filter(s => s.paymentType === 'credit')
       .reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
 
       
-      const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
       
-      const totalCreditRembourses = await ClientPayment.find()
+    const totalCreditRembourses = await ClientPayment.find()
         .then(payments => payments.reduce((sum, p) => sum + p.amount, 0));
           
-      // Crédits remboursés aujourd'hui
-      const paymentsToday = await ClientPayment.find({
-        createdAt: { $gte: start, $lte: end }
-      });
+    // Crédits remboursés aujourd'hui
+    const paymentsToday = await ClientPayment.find({
+      createdAt: { $gte: start, $lte: end }
+    });
 
-      const creditRembourseToday =  paymentsToday
-        .reduce((sum, p) => sum + p.amount, 0);
+    const creditRembourseToday =  paymentsToday
+      .reduce((sum, p) => sum + p.amount, 0);
 
-        const totalCartonsVendus = sales.reduce((sum, s) => {
-          return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
-        }, 0);
+    // Encaissé total = comptant + virement (caisse + banque)
+    const totalEncaisse = totalCash + totalVirement + totalAcomptes;
+
+    const totalCartonsVendus = sales.reduce((sum, s) => {
+      return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
+    }, 0);
       
     res.json({
       date: start,

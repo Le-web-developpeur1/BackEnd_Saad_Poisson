@@ -6,6 +6,7 @@ const Invoice = require('../models/Invoice');
 const { notifyUsers } = require('../utils/notify');
 const Counter = require('../models/Counter');
 const ClientPayment = require('../models/ClientPayment');
+const CashIn = require('../models/CashIn');
 
 const getSales = async (req, res) => {
   try {
@@ -278,7 +279,14 @@ const deleteSale = async (req, res) => {
     await Invoice.findOneAndDelete({ sale: sale._id });
 
     // ==========================================
-    // 2. GÉRER LES PAIEMENTS LIÉS À CETTE VENTE
+    // 2. SUPPRIMER LES ENCAISSEMENTS LIÉS À CETTE VENTE
+    // ==========================================
+    const cashInsDeleted = await CashIn.deleteMany({
+      reason: { $regex: sale.saleNumber }
+    });
+
+    // ==========================================
+    // 3. GÉRER LES PAIEMENTS LIÉS À CETTE VENTE
     // ==========================================
     const paymentsToUpdate = await ClientPayment.find({
       'allocations.sale': sale._id
@@ -305,7 +313,7 @@ const deleteSale = async (req, res) => {
     }
 
     // ==========================================
-    // 3. RESTAURER LE STOCK POUR CHAQUE ARTICLE
+    // 4. RESTAURER LE STOCK POUR CHAQUE ARTICLE
     // ==========================================
     for (const item of sale.items) {
       const product = await Product.findById(item.product);
@@ -327,7 +335,7 @@ const deleteSale = async (req, res) => {
     }
 
     // ==========================================
-    // 4. SUPPRIMER LES MOUVEMENTS DE STOCK INITIAUX DE CETTE VENTE
+    // 5. SUPPRIMER LES MOUVEMENTS DE STOCK INITIAUX DE CETTE VENTE
     // ==========================================
     await StockMovement.deleteMany({
       reason: 'vente',
@@ -340,7 +348,7 @@ const deleteSale = async (req, res) => {
     });
 
     // ==========================================
-    // 5. AJUSTER LA DETTE DU CLIENT SI VENTE À CRÉDIT
+    // 6. AJUSTER LA DETTE DU CLIENT SI VENTE À CRÉDIT
     // ==========================================
     if (sale.client && sale.paymentType === 'credit') {
       const client = await Client.findById(sale.client);
@@ -371,7 +379,7 @@ const deleteSale = async (req, res) => {
     }
 
     // ==========================================
-    // 6. SUPPRIMER LA VENTE
+    // 7. SUPPRIMER LA VENTE
     // ==========================================
     await Sale.findByIdAndDelete(req.params.id);
 
@@ -381,11 +389,13 @@ const deleteSale = async (req, res) => {
         saleNumber: sale.saleNumber,
         stockRestored: sale.items.length,
         invoiceDeleted: true,
+        cashInsDeleted: cashInsDeleted.deletedCount,
         paymentsDeleted,
         paymentsUpdated,
         clientDebtRecalculated: sale.client && sale.paymentType === 'credit'
       }
     });
+
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
