@@ -594,7 +594,9 @@ const getCapitalReport = async (req, res) => {
     // ── 3. VALEUR DES VENTES (au prix de vente) ────────────────────────────
     const valeurTotalVentes = sales.reduce((sum, s) => sum + s.totalAmount, 0);
 
-    const stockFinal = Math.max(0, chiffreAffairesEstime - valeurTotalVentes - avaries);
+    const stockFinal = products.reduce((sum, p) => 
+      sum + (p.stockCartons * p.pricePerCarton), 0
+    );
 
     // ── 4. CAISSE ─────────────────────────────────
     const totalVentesComptant = sales
