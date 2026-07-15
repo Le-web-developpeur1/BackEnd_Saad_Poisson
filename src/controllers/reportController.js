@@ -479,7 +479,16 @@ const getCaisseReport = async (req, res) => {
     const clientPayTodayTotal    = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
     const acomptesToday          = Math.max(0, creditPaidToday - clientPayTodayTotal);
 
-    const creditNetToday = totalCreditToday - clientPayTodayTotal;
+    const clientPayTodayForTodayDebts = clientPayToday.filter(p =>  {
+      //Vérification si ce paiement correspond à une dette créée aujourd'hui
+      const client = clients.find(c => String(c._id) === String(p.client));
+      if (!client) return false;
+      return client.debtHistory.some(d =>
+        d.date >= startToday && d.date <= endToday && d.amount >= p.amount
+      );
+    }).reduce((sum, p) => sum + p.amount, 0);
+
+    const creditNetToday = totalCreditToday - clientPayTodayForTodayDebts;
 
     const transfertsBanqueCaisseToday = transfertsToday
       .filter(t => t.direction === 'banque_vers_caisse')
