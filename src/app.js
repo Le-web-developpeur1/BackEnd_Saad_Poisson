@@ -28,7 +28,8 @@ app.use(cors({
     'https://saadpoisson.com',
     'https://www.saadpoisson.com',
     'https://saad-poisson.vercel.app',
-    'http://localhost:5173'
+    'http://localhost:5173',
+    'http://localhost:5174',
   ],
   credentials: true
 }));

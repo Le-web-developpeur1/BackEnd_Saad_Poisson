@@ -581,7 +581,9 @@ const getCaisseReport = async (req, res) => {
       totalCreditToday,
       clientPayTodayTotal,
       remboursementsDettesDuJour,
-      creditNetToday
+      creditNetToday,
+      creditPaidToday,
+      acomptesToday,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
