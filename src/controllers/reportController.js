@@ -479,16 +479,21 @@ const getCaisseReport = async (req, res) => {
     const clientPayTodayTotal    = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
     const acomptesToday          = Math.max(0, creditPaidToday - clientPayTodayTotal);
 
-    const clientPayTodayForTodayDebts = clientPayToday.filter(p =>  {
-      //Vérification si ce paiement correspond à une dette créée aujourd'hui
-      const client = clients.find(c => String(c._id) === String(p.client));
-      if (!client) return false;
-      return client.debtHistory.some(d =>
-        d.date >= startToday && d.date <= endToday && d.amount >= p.amount
-      );
-    }).reduce((sum, p) => sum + p.amount, 0);
+    //IDS des ventes à crédit créées aujourd'hui
+    const salesTodayIds = salesToday
+      .filter(s => s.paymentType === 'credit')
+      .map(s => s._id.toString());
+    
+    //Remboursements alloués aux dettes créées aujourd'hui
+    const remboursementsDettesDuJour = clientPayToday.reduce((sum, payment) => {
+      const amountOnTodaySales = payment.allocations
+        .filter(alloc => salesTodayIds.includes(alloc.sale.toString()))
+        .reduce((s, alloc) => s + alloc.amountAllocated, 0);
+      return sum + amountOnTodaySales;
+    }, 0);
 
-    const creditNetToday = totalCreditToday - clientPayTodayForTodayDebts;
+    const creditNetToday = totalCreditToday - remboursementsDettesDuJour;
+
 
     const transfertsBanqueCaisseToday = transfertsToday
       .filter(t => t.direction === 'banque_vers_caisse')
@@ -573,6 +578,9 @@ const getCaisseReport = async (req, res) => {
       salesToday,
       expenses,
       totalCashIns,
+      totalCreditToday,
+      clientPayTodayTotal,
+      remboursementsDettesDuJour,
       creditNetToday
     });
   } catch (error) {
