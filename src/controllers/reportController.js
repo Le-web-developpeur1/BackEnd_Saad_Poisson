@@ -12,11 +12,88 @@ const SupplierExpense = require('../models/SupplierExpense');
 const BankTransfer = require('../models/BankTransfer');
 const CashIn = require('../models/CashIn');
 const BankIn = require('../models/BankIn');
+const DailySnapshot = require('../models/DailySnapshot');
 
 const formatAmount = (amount) => {
   if (amount === undefined || amount === null || isNaN(amount)) return '0';
   return Number(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
+
+
+// Fonction pour créer ou mettre à jour le snapshot du jour
+const createOrUpdateDailySnapshot = async (targetDate = new Date()) => {
+  try {
+    // Convertir en Date si c'est une string
+    let dateObj;
+    if (typeof targetDate === 'string') {
+      dateObj = new Date(targetDate);
+    } else if (targetDate instanceof Date) {
+      dateObj = new Date(targetDate.getTime()); // Créer une copie
+    } else {
+      dateObj = new Date();
+    }
+
+    // Vérifier que la date est valide
+    if (isNaN(dateObj.getTime())) {
+      throw new Error('Date invalide fournie');
+    }
+
+    // Créer start et end sans modifier dateObj
+    const start = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0, 0);
+    const end = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 23, 59, 59, 999);
+
+    console.log('📅 Création snapshot pour:', start.toISOString());
+
+    const sales = await Sale.find({ createdAt: { $gte: start, $lte: end } });
+    const expenses = await Expense.find({ date: { $gte: start, $lte: end } });
+    const paymentsToday = await ClientPayment.find({ createdAt: { $gte: start, $lte: end } });
+
+    const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const totalCash = sales.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalVirement = sales.filter(s => s.paymentType === 'virement').reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalAcomptes = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const creditRembourse = paymentsToday.reduce((sum, p) => sum + p.amount, 0);
+    const totalEncaisse = totalCash + totalVirement + totalAcomptes;
+    const totalCartonsVendus = sales.reduce((sum, s) => {
+      return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
+    }, 0);
+
+    console.log('💰 Total encaissé:', totalEncaisse, "Remboursements", creditRembourse, '| Ventes:', sales.length);
+
+    const snapshot = await DailySnapshot.findOneAndUpdate(
+      { date: start },
+      {
+        date: start,
+        totalSales,
+        totalCash,
+        totalVirement,
+        totalEncaisse,
+        totalCartonsVendus,
+        salesCount: sales.length,
+        totalCredit,
+        totalAcomptes,
+        creditRembourse,
+        totalExpenses,
+        netProfit: totalEncaisse - totalExpenses,
+        sales: sales.map(s => s._id),
+        expenses: expenses.map(e => e._id),
+        isFinalized: false
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    console.log('✅ Snapshot créé/mis à jour:', snapshot._id);
+
+    return snapshot;
+  } catch (error) {
+    console.error('❌ Erreur création snapshot:', error.message);
+    throw error;
+  }
+};
+
+
 
 const getDailyReport = async (req, res) => {
   try {
@@ -548,7 +625,7 @@ const getCaisseReport = async (req, res) => {
 
     // Solde du mois = encaissé − dépenses opérationnelles − paiements fournisseurs
     const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois;
-
+    
     res.json({
       totalVentes,
       totalEncaisse,
@@ -1030,5 +1107,5 @@ module.exports = {
   getSupplierReport, exportDailyReport, exportMonthlyReport,
   exportStockReport, exportDebtReport, exportSupplierReport,
   getCaisseReport, getCapitalReport, getCaisseMovements, getBankMovements,
-  exportCaisseReport, exportBankReport
+  exportCaisseReport, exportBankReport, createOrUpdateDailySnapshot
 };
