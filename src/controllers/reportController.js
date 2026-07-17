@@ -52,7 +52,10 @@ const createOrUpdateDailySnapshot = async (targetDate = new Date()) => {
     const totalCash = sales.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
     const totalVirement = sales.filter(s => s.paymentType === 'virement').reduce((sum, s) => sum + s.amountPaid, 0);
     const totalAcomptes = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
-    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+    // Crédit CRÉÉ ce jour = montant total - acompte initial (ne change jamais même si remboursé plus tard)
+    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => {
+      return sum + (s.totalAmount - (s.initialAmountPaid || 0));
+    }, 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
     const creditRembourse = paymentsToday.reduce((sum, p) => sum + p.amount, 0);
     const totalEncaisse = totalCash + totalVirement + totalAcomptes;
@@ -94,7 +97,7 @@ const createOrUpdateDailySnapshot = async (targetDate = new Date()) => {
 };
 
 
-
+//Modifier
 const getDailyReport = async (req, res) => {
   try {
     const { date } = req.query;
@@ -102,69 +105,61 @@ const getDailyReport = async (req, res) => {
     const start = new Date(targetDate.setHours(0, 0, 0, 0));
     const end = new Date(targetDate.setHours(23, 59, 59, 999));
 
-    const sales = await Sale.find({ createdAt: { $gte: start, $lte: end } });
-    const expenses = await Expense.find({ date: { $gte: start, $lte: end } });
+    // Vérifier si c'est aujourd'hui
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = start.getTime() === today.getTime();
 
-    const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    // Chercher le snapshot existant
+    let snapshot = await DailySnapshot.findOne({ date: start })
+      .populate('sales')
+      .populate('expenses');
 
-    const totalCash = sales
-      .filter(s => s.paymentType === 'comptant')
-      .reduce((sum, s) => sum + s.amountPaid, 0);
-
-    const totalVirement = sales
-      .filter(s => s.paymentType === 'virement')
-      .reduce((sum, s) => sum + s.amountPaid, 0);
-
-    const totalAcomptes = sales
-      .filter(s => s.paymentType === 'credit')
-      .reduce((sum, s) => sum + s.amountPaid, 0);
-
-
-    const totalCredit = sales
-      .filter(s => s.paymentType === 'credit')
-      .reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
-
+    // Si c'est aujourd'hui OU si le snapshot n'existe pas, le créer/mettre à jour
+    if (isToday || !snapshot) {
+      console.log(`📊 ${isToday ? 'Mise à jour' : 'Création'} du snapshot pour ${start.toLocaleDateString('fr-FR')}`);
       
-    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+      snapshot = await createOrUpdateDailySnapshot(new Date(start));
       
-    const totalCreditRembourses = await ClientPayment.find()
-        .then(payments => payments.reduce((sum, p) => sum + p.amount, 0));
-          
-    // Crédits remboursés aujourd'hui
-    const paymentsToday = await ClientPayment.find({
-      createdAt: { $gte: start, $lte: end }
-    });
+      // Recharger avec les populations
+      snapshot = await DailySnapshot.findById(snapshot._id)
+        .populate('sales')
+        .populate('expenses');
+    } else {
+      console.log(`📦 Utilisation du snapshot figé pour ${start.toLocaleDateString('fr-FR')}`);
+    }
 
-    const creditRembourseToday =  paymentsToday
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    // Encaissé total = comptant + virement (caisse + banque)
-    const totalEncaisse = totalCash + totalVirement + totalAcomptes;
-
-    const totalCartonsVendus = sales.reduce((sum, s) => {
-      return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
-    }, 0);
-      
+    // Retourner les données du snapshot
     res.json({
-      date: start,
-      totalSales,
-      totalCash,
-      totalVirement,
-      totalEncaisse,
-      totalCredit,
-      totalExpenses,
-      totalCreditRembourses,
-      creditRembourseToday,
-      netProfit: totalEncaisse - totalExpenses,
-      salesCount: sales.length,
-      sales,
-      expenses,
-      totalCartonsVendus
+      date: snapshot.date,
+      totalSales: snapshot.totalSales,
+      totalCash: snapshot.totalCash,
+      totalVirement: snapshot.totalVirement,
+      totalEncaisse: snapshot.totalEncaisse,
+      totalCredit: snapshot.totalCredit,
+      totalExpenses: snapshot.totalExpenses,
+      creditRembourseToday: snapshot.creditRembourse,
+      netProfit: snapshot.netProfit,
+      salesCount: snapshot.salesCount,
+      sales: snapshot.sales,
+      expenses: snapshot.expenses,
+      totalCartonsVendus: snapshot.totalCartonsVendus,
+      
+      // Métadonnées utiles
+      isFinalized: snapshot.isFinalized,
+      isToday,
+      message: isToday 
+        ? 'Données en temps réel (mises à jour automatiquement)'
+        : snapshot.isFinalized
+          ? 'Données figées (journée clôturée)'
+          : 'Données historiques (peuvent être recalculées)'
     });
   } catch (error) {
+    console.error('❌ Erreur getDailyReport:', error);
     res.status(500).json({ message: error.message });
   }
 };
+
 
 const getMonthlyReport = async (req, res) => {
   try {
@@ -179,7 +174,9 @@ const getMonthlyReport = async (req, res) => {
 
     const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.totalAmount, 0);
+    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => {
+      return sum + (s.totalAmount - (s.initialAmountPaid || 0));
+    }, 0);
 
 
     res.json({
@@ -237,30 +234,43 @@ const getSupplierReport = async (req, res) => {
   }
 };
 
+//Modifier aussi
 const exportDailyReport = async (req, res) => {
   try {
     const { format, date } = req.query;
     const targetDate = date ? new Date(date) : new Date();
-    const start = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
-    const end   = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
+    const start = new Date(targetDate.setHours(0, 0, 0, 0));
 
-    const sales    = await Sale.find({ createdAt: { $gte: start, $lte: end } });
-    const expenses = await Expense.find({ date: { $gte: start, $lte: end } });
-    const config   = await SystemConfig.findOne();
+    // Vérifier si c'est aujourd'hui
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = start.getTime() === today.getTime();
 
-    const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
-    const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
-    const totalCartonsVendus = sales.reduce((sum, s) => {
-      return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
-    }, 0);
+    // Chercher ou créer le snapshot
+    let snapshot = await DailySnapshot.findOne({ date: start })
+      .populate('sales')
+      .populate('expenses');
 
-    const benefice = totalEncaisse - totalDepenses;
+    if (isToday || !snapshot) {
+      snapshot = await createOrUpdateDailySnapshot(new Date(start));
+      snapshot = await DailySnapshot.findById(snapshot._id)
+        .populate('sales')
+        .populate('expenses');
+    }
 
-    const title   = `Rapport Journalier — ${start.toLocaleDateString('fr-FR')}`;
+    const config = await SystemConfig.findOne();
+
+    // Utiliser les données du snapshot
+    const totalVentes = snapshot.totalSales;
+    const totalEncaisse = snapshot.totalEncaisse;
+    const totalDepenses = snapshot.totalExpenses;
+    const totalCredit = snapshot.totalCredit;
+    const totalCartonsVendus = snapshot.totalCartonsVendus;
+    const benefice = snapshot.netProfit;
+
+    const title = `Rapport Journalier — ${start.toLocaleDateString('fr-FR')}`;
     const headers = ['N° Vente', 'Client', 'Montant', 'Type', 'Statut', 'Date'];
-    const rows    = sales.map(s => [
+    const rows = snapshot.sales.map(s => [
       s.saleNumber,
       s.clientName,
       `${formatAmount(s.totalAmount)} GNF`,
@@ -270,22 +280,27 @@ const exportDailyReport = async (req, res) => {
     ]);
 
     const totals = [
-      { label: 'Cartons vendus',    value: String(totalCartonsVendus),          highlight: false },
-      { label: 'Total ventes',      value: `${formatAmount(totalVentes)} GNF`,   highlight: false },
-      { label: 'Total encaissé',    value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
-      { label: 'Crédits en cours',  value: `${formatAmount(totalCredit)} GNF`,   highlight: false },
-      { label: 'Total dépenses',    value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
-      { label: 'Total disponible',  value: `${formatAmount(benefice)} GNF`,      highlight: true  },
+      { label: 'Cartons vendus', value: String(totalCartonsVendus), highlight: false },
+      { label: 'Total ventes', value: `${formatAmount(totalVentes)} GNF`, highlight: false },
+      { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
+      { label: 'Crédits en cours', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
+      { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
+      { label: 'Total disponible', value: `${formatAmount(benefice)} GNF`, highlight: true },
     ];
 
     const fname = `rapport-journalier-${start.toISOString().split('T')[0]}`;
-    if (format === 'pdf')  return await exportPDF(title, headers, rows, res, fname, totals, config);
+    
+    if (format === 'pdf') return await exportPDF(title, headers, rows, res, fname, totals, config);
     if (format === 'word') return await exportWord(title, headers, rows, res, fname);
-    if (format === 'csv')  return await exportCSV(headers, rows, res, fname);
+    if (format === 'csv') return await exportCSV(headers, rows, res, fname);
 
     res.status(400).json({ message: 'Format invalide. Utilisez pdf, word ou csv' });
-  } catch (error) { res.status(500).json({ message: error.message }); }
+  } catch (error) {
+    console.error('❌ Erreur exportDailyReport:', error);
+    res.status(500).json({ message: error.message });
+  }
 };
+
 
 const exportMonthlyReport = async (req, res) => {
   try {
@@ -302,7 +317,9 @@ const exportMonthlyReport = async (req, res) => {
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const totalCredit   = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+    const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => {
+      return sum + (s.totalAmount - (s.initialAmountPaid || 0));
+    }, 0);
     const benefice      = totalEncaisse - totalDepenses;
 
     const title   = `Rapport Mensuel — ${m + 1}/${y}`;
