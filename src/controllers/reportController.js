@@ -51,7 +51,7 @@ const createOrUpdateDailySnapshot = async (targetDate = new Date()) => {
     const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalCash = sales.filter(s => s.paymentType === 'comptant').reduce((sum, s) => sum + s.amountPaid, 0);
     const totalVirement = sales.filter(s => s.paymentType === 'virement').reduce((sum, s) => sum + s.amountPaid, 0);
-    const totalAcomptes = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
+    const totalAcomptes = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.initialAmountPaid, 0);
     // Crédit CRÉÉ ce jour = montant total - acompte initial (ne change jamais même si remboursé plus tard)
     const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => {
       return sum + (s.totalAmount - (s.initialAmountPaid || 0));
@@ -143,6 +143,7 @@ const getDailyReport = async (req, res) => {
       salesCount: snapshot.salesCount,
       sales: snapshot.sales,
       expenses: snapshot.expenses,
+      totalAcomptes: snapshot.totalAcomptes,
       totalCartonsVendus: snapshot.totalCartonsVendus,
       
       // Métadonnées utiles
