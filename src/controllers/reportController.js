@@ -602,7 +602,7 @@ const getCaisseReport = async (req, res) => {
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday - transfertsCaisseVersBanqueToday;
+    const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday;
     const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0);
 
     // ── Ce mois ───────────────────────────────────────
@@ -639,10 +639,10 @@ const getCaisseReport = async (req, res) => {
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois - transfertsCaisseBanqueMois;
+    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois;
 
     // Solde du mois = encaissé − dépenses opérationnelles − paiements fournisseurs
-    const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois;
+    const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois - transfertsCaisseBanqueMois;
     
     res.json({
       totalVentes,
@@ -679,6 +679,7 @@ const getCaisseReport = async (req, res) => {
       creditNetToday,
       creditPaidToday,
       acomptesToday,
+      transfertsCaisseBanqueMois
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
