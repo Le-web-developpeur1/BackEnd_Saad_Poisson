@@ -41,13 +41,27 @@ const createProduct = async (req, res) => {
 // @desc    Modifier un produit
 const updateProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Produit introuvable' });
+
+    // 🔥 Supprimer les champs système que MongoDB gère automatiquement
+    const { __v, _id, ...updateData } = req.body;
+
+    // 🔥 Si on modifie stockCartons, on met à jour stockInitialCartons aussi
+    if (updateData.stockCartons !== undefined) {
+      updateData.stockInitialCartons = updateData.stockCartons;
+    }
+
+    // Appliquer toutes les modifications
+    Object.assign(product, updateData);
+    await product.save();
+
     res.json(product);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 // @desc    Supprimer un produit (admin only)
 const deleteProduct = async (req, res) => {
@@ -160,6 +174,7 @@ const getArchivedProducts = async (req, res) => {
 const adjustStock = async (req, res) => {
   try {
     const { quantityCartons, reason, type } = req.body;
+  
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Produit introuvable' });
 
@@ -170,13 +185,13 @@ const adjustStock = async (req, res) => {
       product.stockInitialCartons += qCartons;
     } else if (type === 'sortie') {
       product.stockCartons = Math.max(0, product.stockCartons - qCartons);
-    } else {
+    } else if (type === 'ajustement') {
       product.stockCartons        = qCartons;
       product.stockInitialCartons = qCartons;
-    }
+    } 
 
     await product.save();
-
+    
     if (product.stockCartons <= product.alertThreshold) {
       await notifyUsers(
         'lowStock',
