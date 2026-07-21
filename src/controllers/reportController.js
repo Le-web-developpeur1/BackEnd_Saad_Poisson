@@ -574,6 +574,9 @@ const getCaisseReport = async (req, res) => {
     const clientPayTodayTotal    = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
     const acomptesToday          = Math.max(0, creditPaidToday - clientPayTodayTotal);
 
+    const cashInsToday = await CashIn.find({ createdAt: { $gte: startToday, $lte: endToday } });
+    const totalCashInsToday = cashInsToday.reduce((sum, c) => sum + c.amount, 0);
+
     //IDS des ventes à crédit créées aujourd'hui
     const salesTodayIds = salesToday
       .filter(s => s.paymentType === 'credit')
@@ -602,7 +605,7 @@ const getCaisseReport = async (req, res) => {
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday;
+    const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday + totalCashInsToday;
     const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0);
 
     // ── Ce mois ───────────────────────────────────────
@@ -622,6 +625,9 @@ const getCaisseReport = async (req, res) => {
     const clientPayMonthTotal    = clientPayMonth.reduce((sum, p) => sum + p.amount, 0);
     const acomptesMonth          = Math.max(0, creditPaidMonth - clientPayMonthTotal);
 
+    const cashInsMonth = await CashIn.find({ createdAt: { $gte: startMonth, $lte: endMonth } });
+    const totalCashInsMonth = cashInsMonth.reduce((sum, c) => sum + c.amount, 0);
+
     const transfertsBanqueCaisseMois = transfertsMonth
       .filter(t => t.direction === 'banque_vers_caisse')
       .reduce((sum, t) => sum + t.amount, 0);
@@ -639,7 +645,7 @@ const getCaisseReport = async (req, res) => {
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois;
+    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois + totalCashInsMonth ;
 
     // Solde du mois = encaissé − dépenses opérationnelles − paiements fournisseurs
     const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois - transfertsCaisseBanqueMois;
