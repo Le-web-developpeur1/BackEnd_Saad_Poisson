@@ -315,12 +315,16 @@ const exportMonthlyReport = async (req, res) => {
     const sales    = await Sale.find({ createdAt: { $gte: start, $lte: end } });
     const expenses = await Expense.find({ date: { $gte: start, $lte: end } });
 
+    const cashIns = await CashIn.find({ createdAt: { $gte: start, $lte: end } });
+    const totalCashIns = cashIns.reduce((sum, c) => sum + c.amount, 0);
+
     const totalVentes   = sales.reduce((sum, s) => sum + s.totalAmount, 0);
     const totalEncaisse = sales.reduce((sum, s) => sum + s.amountPaid, 0);
     const totalDepenses = expenses.reduce((sum, e) => sum + e.amount, 0);
     const totalCredit = sales.filter(s => s.paymentType === 'credit').reduce((sum, s) => {
       return sum + (s.totalAmount - (s.initialAmountPaid || 0));
     }, 0);
+
     const benefice      = totalEncaisse - totalDepenses;
 
     const title   = `Rapport Mensuel — ${m + 1}/${y}`;
@@ -605,7 +609,7 @@ const getCaisseReport = async (req, res) => {
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant + transfertsBanqueCaisseToday + totalCashInsToday;
+    const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant;
     const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0);
 
     // ── Ce mois ───────────────────────────────────────
@@ -645,10 +649,10 @@ const getCaisseReport = async (req, res) => {
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois + totalCashInsMonth ;
+    const encaisseMois = comptantMonth + acomptesMonth + clientPayMonthComptant + transfertsBanqueCaisseMois + totalCashInsMonth;
 
     // Solde du mois = encaissé − dépenses opérationnelles − paiements fournisseurs
-    const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois - transfertsCaisseBanqueMois;
+    const soldeMois = encaisseMois - depensesMois - paiementsFournisseursMois - transfertsCaisseBanqueMois ;
     
     res.json({
       totalVentes,
@@ -1040,11 +1044,11 @@ const exportCaisseReport = async (req, res) => {
       ...sales.filter(s => s.paymentType === 'comptant').map(s => ({ date: s.createdAt, type: 'entrée', categorie: 'Vente comptant', libelle: `Vente ${s.saleNumber} — ${s.clientName}`, montant: s.amountPaid })),
       ...sales.filter(s => s.paymentType === 'credit' && (s.initialAmountPaid || 0) > 0).map(s => ({ date: s.createdAt, type: 'entrée', categorie: 'Acompte crédit', libelle: `Acompte ${s.saleNumber} — ${s.clientName}`, montant: s.initialAmountPaid || 0 })),
       ...clientPayments.map(p => ({ date: p.createdAt, type: 'entrée', categorie: 'Remboursement crédit', libelle: `Paiement dette — ${p.clientName}`, montant: p.amount })),
-      ...transferts.filter(t => t.direction === 'banque_vers_caisse').map(t => ({ date: t.createdAt, type: 'entrée', categorie: 'Transfert reçu', libelle: `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
-      ...cashIns.map(c => ({ date: c.createdAt, type: 'entrée', categorie: 'Alimentation', libelle: `${c.reason}${c.note ? ' — ' + c.note : ''}`, montant: c.amount })),
+      // ...transferts.filter(t => t.direction === 'banque_vers_caisse').map(t => ({ date: t.createdAt, type: 'entrée', categorie: 'Transfert reçu', libelle: `Transfert banque → caisse${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
+      // ...cashIns.map(c => ({ date: c.createdAt, type: 'entrée', categorie: 'Alimentation', libelle: `${c.reason}${c.note ? ' — ' + c.note : ''}`, montant: c.amount })),
       ...expenses.map(e => ({ date: e.date || e.createdAt, type: 'sortie', categorie: 'Dépense', libelle: e.title, montant: e.amount })),
       ...supplierExpenses.map(e => ({ date: e.createdAt, type: 'sortie', categorie: 'Paiement fournisseur', libelle: `${e.title} — ${e.supplierName}`, montant: e.amount })),
-      ...transferts.filter(t => t.direction === 'caisse_vers_banque').map(t => ({ date: t.createdAt, type: 'sortie', categorie: 'Transfert envoyé', libelle: `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
+      // ...transferts.filter(t => t.direction === 'caisse_vers_banque').map(t => ({ date: t.createdAt, type: 'sortie', categorie: 'Transfert envoyé', libelle: `Transfert caisse → banque${t.note ? ' — ' + t.note : ''}`, montant: t.amount })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     totalEntrees = mouvements.filter(m => m.type === 'entrée').reduce((sum, m) => sum + m.montant, 0);
