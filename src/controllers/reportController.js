@@ -581,7 +581,10 @@ const getCaisseReport = async (req, res) => {
     const creditPaidToday        = salesToday.filter(s => s.paymentType === 'credit').reduce((sum, s) => sum + s.amountPaid, 0);
     const clientPayTodayComptant = clientPayToday.filter(p => p.modePaiement !== 'virement').reduce((sum, p) => sum + p.amount, 0);
     const clientPayTodayTotal    = clientPayToday.reduce((sum, p) => sum + p.amount, 0);
-    const acomptesToday          = Math.max(0, creditPaidToday - clientPayTodayTotal);
+    const acomptesToday = salesToday
+      .filter(s => s.paymentType === 'credit' && (s.initialAmountPaid || 0) > 0)
+      .reduce((sum, s) => sum + (s.initialAmountPaid || 0), 0);
+
 
     const cashInsToday = await CashIn.find({ createdAt: { $gte: startToday, $lte: endToday } });
     const totalCashInsToday = cashInsToday.reduce((sum, c) => sum + c.amount, 0);
@@ -613,6 +616,8 @@ const getCaisseReport = async (req, res) => {
     const paiementsFournisseursToday = supplierExpToday
       .filter(e => e.modePaiement === 'comptant')
       .reduce((sum, e) => sum + e.amount, 0);
+
+    // console.log("Comptant :", comptantToday, "Avances :", acomptesToday, "Clientpay: ", clientPayTodayComptant, "CreditPaid: ", creditPaidToday );
 
     const encaisseAujourdhui   = comptantToday + acomptesToday + clientPayTodayComptant;
     const depensesAujourdhui   = expensesToday.reduce((sum, e) => sum + e.amount, 0);
