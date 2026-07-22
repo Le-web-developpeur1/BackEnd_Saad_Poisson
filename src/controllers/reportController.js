@@ -58,7 +58,7 @@ const createOrUpdateDailySnapshot = async (targetDate = new Date()) => {
     }, 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
     const creditRembourse = paymentsToday.reduce((sum, p) => sum + p.amount, 0);
-    const totalEncaisse = totalCash + totalVirement + totalAcomptes;
+    const totalEncaisse = totalCash + totalVirement + totalAcomptes;;
     const totalCartonsVendus = sales.reduce((sum, s) => {
       return sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0);
     }, 0);
@@ -79,7 +79,7 @@ const createOrUpdateDailySnapshot = async (targetDate = new Date()) => {
         totalAcomptes,
         creditRembourse,
         totalExpenses,
-        netProfit: totalEncaisse - totalExpenses,
+        netProfit: totalEncaisse + creditRembourse - totalExpenses,
         sales: sales.map(s => s._id),
         expenses: expenses.map(e => e._id),
         isFinalized: false
@@ -262,11 +262,13 @@ const exportDailyReport = async (req, res) => {
     const config = await SystemConfig.findOne();
 
     // Utiliser les données du snapshot
-    const totalVentes = snapshot.totalSales;
-    const totalEncaisse = snapshot.totalEncaisse;
-    const totalDepenses = snapshot.totalExpenses;
-    const totalCredit = snapshot.totalCredit;
     const totalCartonsVendus = snapshot.totalCartonsVendus;
+    const totalVentes = snapshot.totalSales;
+    const ventesComptant = snapshot.totalEncaisse;
+    const totalRembourse = snapshot.creditRembourse;
+    const totalCredit = snapshot.totalCredit - totalRembourse;
+    const totalEncaisse = snapshot.totalEncaisse + totalRembourse;
+    const totalDepenses = snapshot.totalExpenses;
     const benefice = snapshot.netProfit;
 
     const title = `Rapport Journalier — ${start.toLocaleDateString('fr-FR')}`;
@@ -283,8 +285,11 @@ const exportDailyReport = async (req, res) => {
     const totals = [
       { label: 'Cartons vendus', value: String(totalCartonsVendus), highlight: false },
       { label: 'Total ventes', value: `${formatAmount(totalVentes)} GNF`, highlight: false },
+      { label: 'Ventes comptant', value: `${formatAmount(ventesComptant)} GNF`, highlight: false },
+      { label: 'Total crédit', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
+      {},
+      { label: 'Total remboursé', value: `${formatAmount(totalRembourse)} GNF`, highlight: false },
       { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
-      { label: 'Crédits en cours', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
       { label: 'Total dépenses', value: `${formatAmount(totalDepenses)} GNF`, highlight: false },
       { label: 'Total disponible', value: `${formatAmount(benefice)} GNF`, highlight: true },
     ];
