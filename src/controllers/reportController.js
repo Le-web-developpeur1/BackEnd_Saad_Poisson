@@ -285,8 +285,8 @@ const exportDailyReport = async (req, res) => {
     const totals = [
       { label: 'Cartons vendus', value: String(totalCartonsVendus), highlight: false },
       { label: 'Total ventes', value: `${formatAmount(totalVentes)} GNF`, highlight: false },
-      { label: 'Ventes comptant', value: `${formatAmount(ventesComptant)} GNF`, highlight: false },
-      { label: 'Total crédit', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
+      { label: 'Ventes comptants', value: `${formatAmount(ventesComptant)} GNF`, highlight: false },
+      { label: 'Crédits accordés', value: `${formatAmount(totalCredit)} GNF`, highlight: false },
       {},
       { label: 'Total remboursé', value: `${formatAmount(totalRembourse)} GNF`, highlight: false },
       { label: 'Total encaissé', value: `${formatAmount(totalEncaisse)} GNF`, highlight: false },
